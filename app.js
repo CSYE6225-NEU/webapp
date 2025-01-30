@@ -1,12 +1,28 @@
+// app.js
 const express = require("express");
+const {
+  validateHealthCheckRequest,
+} = require("./middleware/healthCheckMiddleware");
+const { handleHealthCheck } = require("./controllers/healthCheckController");
+
 const app = express();
 
-const port = process.env.PORT || 8080;
+// Health check endpoint with proper callback function
+app.get("/healthz", validateHealthCheckRequest, handleHealthCheck);
 
-app.get("/test", (req, res) => {
-  res.status(200).json({ message: `test api working` });
+// Handle unsupported methods for /healthz
+app.all("/healthz", (req, res) => {
+  res.set({
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    Pragma: "no-cache",
+    "X-Content-Type-Options": "nosniff",
+  });
+  res.status(405).end();
 });
 
-app.listen(port, () => {
-  console.log(`server is running on ${port}`);
+// Handle unsupported routes
+app.use((req, res) => {
+  res.status(404).end();
 });
+
+module.exports = app;
