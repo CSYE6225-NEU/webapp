@@ -77,6 +77,16 @@ The application provides a health check endpoint at `/healthz` with the followin
 - Invalid Method Response: 405 Method Not Allowed
 - Invalid Route Response: 404 Not Found
 
+## Unit Tests
+
+The project includes unit tests located in the ⁠ **tests** ⁠ directory. These tests ensure the functionality and reliability of critical API features, including the health check endpoint.
+
+## Scripts
+
+A ⁠ scripts ⁠ folder contains a shell script (⁠ script.sh ⁠). This script is designed to automate setup tasks on a Linux cloud machine. It can:
+•⁠ ⁠Set up the SQL database.
+•⁠ ⁠Unzip and prepare the application
+
 Additional Features:
 
 - Blocks requests with authorization headers
