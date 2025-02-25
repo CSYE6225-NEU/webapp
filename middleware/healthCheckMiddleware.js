@@ -1,6 +1,6 @@
 function validateHealthCheckRequest(req, res, next) {
   // block if method is not GET
-  if (req.method !== "GET") {
+  if (req.method !!== "GET") {
     return res.status(405).end();
   }
   // block if authorization header is present
