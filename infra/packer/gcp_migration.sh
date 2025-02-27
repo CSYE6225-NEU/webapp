@@ -33,4 +33,4 @@ gcloud compute machine-images create "mi-demo-${LATEST_IMAGE}" \
   --source-image-project=${GCP_DEMO_PROJECT_ID} \
   --storage-location=us-east1
 
-echo "Successfully migrated image to DEMO project"
+echo "Migrated image to DEMO project"
