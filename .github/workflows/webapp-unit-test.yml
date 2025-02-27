@@ -1,5 +1,4 @@
 name: WebApp Unit Testing
-
 on:
   push:
     branches:
@@ -7,12 +6,10 @@ on:
   pull_request:
     branches:
       - main
-
 jobs:
   run-tests:
     name: Run Unit Tests
     runs-on: ubuntu-latest
-
     services:
       mysql:
         image: mysql:8.0
@@ -21,14 +18,11 @@ jobs:
           MYSQL_DATABASE: ${{ secrets.DB_NAME }}
         ports:
           - 3306:3306
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
       - name: Update and Install Dependencies
         run: sudo apt update && sudo apt upgrade -y
-
       - name: Wait for MySQL to Be Ready
         run: |
           for i in {30..0}; do
@@ -43,7 +37,6 @@ jobs:
             echo "ERROR: MySQL failed to start"
             exit 1
           fi
-
       - name: Create `.env` File
         run: |
           cat <<EOF > .env
@@ -54,9 +47,7 @@ jobs:
           DB_NAME=${{ secrets.DB_NAME }}
           PORT=${{ secrets.PORT }}
           EOF
-
       - name: Install Project Dependencies
         run: npm install
-
       - name: Run Tests
         run: npm test
