@@ -1,36 +1,143 @@
 #!/bin/bash
-set -e
 
-# Check if zone parameter is provided
-if [ -z "$1" ]; then
-  echo "Error: Zone parameter is required"
-  echo "Usage: $0 <zone>"
+# Default zone value - can be overridden with command line parameter
+DEFAULT_ZONE="us-east1-b"
+ZONE=${1:-$DEFAULT_ZONE}
+
+# Paths to GCP Service Account JSON Keys using GitHub Actions secrets
+DEV_GCP_KEY="gcp-dev-credentials.json"
+DEMO_GCP_KEY="gcp-demo-credentials.json"
+
+echo "Extracting project IDs from credentials..."
+
+# Extract project IDs from credential files
+DEV_PROJECT_ID=$(cat $DEV_GCP_KEY | jq -r '.project_id')
+DEMO_PROJECT_ID=$(cat $DEMO_GCP_KEY | jq -r '.project_id')
+
+# Extract service account emails
+DEV_SERVICE_ACCOUNT=$(cat $DEV_GCP_KEY | jq -r '.client_email')
+DEMO_SERVICE_ACCOUNT=$(cat $DEMO_GCP_KEY | jq -r '.client_email')
+
+echo "DEV Project ID: $DEV_PROJECT_ID"
+echo "DEMO Project ID: $DEMO_PROJECT_ID"
+echo "DEV Service Account: $DEV_SERVICE_ACCOUNT"
+echo "DEMO Service Account: $DEMO_SERVICE_ACCOUNT"
+echo "Using Zone: $ZONE"
+
+echo "Finding the latest compute image in DEV project..."
+
+# Authenticate with DEV project
+gcloud auth activate-service-account --key-file=$DEV_GCP_KEY
+gcloud config set project $DEV_PROJECT_ID
+
+# Get the latest compute image name with "custom-nodejs-mysql" prefix
+COMPUTE_IMAGE_NAME=$(gcloud compute images list --project=$DEV_PROJECT_ID \
+  --filter="name~'custom-nodejs-mysql'" \
+  --sort-by=~creationTimestamp --limit=1 \
+  --format="value(name)")
+
+if [ -z "$COMPUTE_IMAGE_NAME" ]; then
+  echo "No compute image found with prefix 'custom-nodejs-mysql'. Exiting..."
   exit 1
 fi
 
-ZONE="$1"
-LATEST_IMAGE=$(gcloud compute images list --project=${GCP_PROJECT_ID} --filter="name:custom-nodejs-mysql" --format="value(name)" --sort-by=~creationTimestamp --limit=1)
+echo "Found latest compute image: $COMPUTE_IMAGE_NAME"
 
-echo "Latest image found: ${LATEST_IMAGE}"
+# Compute Instance Details
+MACHINE_TYPE="e2-medium"
 
-if [ -z "${LATEST_IMAGE}" ]; then
-  echo "Error: No source image found in project ${GCP_PROJECT_ID}"
-  exit 1
-fi
+# Image & Machine Image Details
+TIMESTAMP=$(date +%s)
+TEMP_INSTANCE_DEV="temp-vm-dev-${TIMESTAMP}"
+TEMP_INSTANCE_DEMO="temp-vm-demo-${TIMESTAMP}"
+MACHINE_IMAGE_NAME_DEV="mi-${COMPUTE_IMAGE_NAME}"
+MACHINE_IMAGE_NAME_DEMO="mi-demo-${COMPUTE_IMAGE_NAME}"
+COPIED_COMPUTE_IMAGE_NAME="copy-${COMPUTE_IMAGE_NAME}"
+STORAGE_LOCATION="us"
 
-# Create a copy of the image in the DEMO project
-echo "Creating copy of image in DEMO project..."
-gcloud compute images create "copy-${LATEST_IMAGE}" \
-  --project=${GCP_DEMO_PROJECT_ID} \
-  --source-image=${LATEST_IMAGE} \
-  --source-image-project=${GCP_PROJECT_ID}
+echo "Authenticating with GCP DEV Project ($DEV_PROJECT_ID)..."
+gcloud auth activate-service-account --key-file=$DEV_GCP_KEY
+gcloud config set project $DEV_PROJECT_ID
 
-# Create machine image in DEMO project
-echo "Creating machine image in DEMO project..."
-gcloud compute machine-images create "mi-demo-${LATEST_IMAGE}" \
-  --project=${GCP_DEMO_PROJECT_ID} \
-  --source-image="copy-${LATEST_IMAGE}" \
-  --source-image-project=${GCP_DEMO_PROJECT_ID} \
-  --storage-location=us-east1
+echo "Creating a temporary VM ($TEMP_INSTANCE_DEV) from Compute Image ($COMPUTE_IMAGE_NAME)..."
+gcloud compute instances create $TEMP_INSTANCE_DEV \
+  --image=$COMPUTE_IMAGE_NAME \
+  --image-project=$DEV_PROJECT_ID \
+  --machine-type=$MACHINE_TYPE \
+  --zone=$ZONE \
+  --tags=allow-ssh
 
-echo "Migrated image to DEMO project"
+echo "Waiting for VM to initialize..."
+sleep 15  # Adjust wait time if needed
+
+echo "Creating Machine Image ($MACHINE_IMAGE_NAME_DEV) from VM ($TEMP_INSTANCE_DEV)..."
+gcloud compute machine-images create $MACHINE_IMAGE_NAME_DEV \
+    --source-instance=$TEMP_INSTANCE_DEV \
+    --source-instance-zone=$ZONE \
+    --project=$DEV_PROJECT_ID \
+    --storage-location=$STORAGE_LOCATION
+
+echo "Verifying Machine Image in DEV ($MACHINE_IMAGE_NAME_DEV)..."
+gcloud compute machine-images list --project=$DEV_PROJECT_ID --filter="name=$MACHINE_IMAGE_NAME_DEV"
+
+echo "Deleting temporary VM ($TEMP_INSTANCE_DEV)..."
+gcloud compute instances delete $TEMP_INSTANCE_DEV --zone=$ZONE --quiet
+
+echo "Granting DEMO Project ($DEMO_PROJECT_ID) access to Compute Image ($COMPUTE_IMAGE_NAME)..."
+gcloud compute images add-iam-policy-binding $COMPUTE_IMAGE_NAME \
+    --project=$DEV_PROJECT_ID \
+    --member="serviceAccount:$DEMO_SERVICE_ACCOUNT" \
+    --role="roles/compute.imageUser"
+
+echo "Authenticating with GCP DEMO Project ($DEMO_PROJECT_ID)..."
+gcloud auth activate-service-account --key-file=$DEMO_GCP_KEY
+gcloud config set project $DEMO_PROJECT_ID
+
+echo "Copying Compute Image ($COMPUTE_IMAGE_NAME) to DEMO Project ($DEMO_PROJECT_ID)..."
+gcloud compute images create "$COPIED_COMPUTE_IMAGE_NAME" \
+    --source-image="$COMPUTE_IMAGE_NAME" \
+    --source-image-project="$DEV_PROJECT_ID" \
+    --project="$DEMO_PROJECT_ID"
+
+echo "Verifying Compute Image in DEMO ($COPIED_COMPUTE_IMAGE_NAME)..."
+gcloud compute images list --project=$DEMO_PROJECT_ID --filter="name=$COPIED_COMPUTE_IMAGE_NAME"
+
+###Wait until Compute Image is available**
+WAIT_TIME=10
+MAX_RETRIES=10
+retry=0
+while ! gcloud compute images describe $COPIED_COMPUTE_IMAGE_NAME --project=$DEMO_PROJECT_ID &>/dev/null; do
+    if [[ $retry -ge $MAX_RETRIES ]]; then
+        echo "Compute Image copy failed to appear in DEMO project. Exiting..."
+        exit 1
+    fi
+    echo "Waiting for Compute Image to be available in DEMO ($WAIT_TIME seconds)..."
+    sleep $WAIT_TIME
+    ((retry++))
+done
+
+echo "Creating a temporary VM ($TEMP_INSTANCE_DEMO) from Copied Compute Image ($COPIED_COMPUTE_IMAGE_NAME)..."
+gcloud compute instances create $TEMP_INSTANCE_DEMO \
+  --image=$COPIED_COMPUTE_IMAGE_NAME \
+  --image-project=$DEMO_PROJECT_ID \
+  --machine-type=$MACHINE_TYPE \
+  --zone=$ZONE \
+  --tags=allow-ssh
+
+echo "Waiting for VM to initialize..."
+sleep 15  # Adjust wait time if needed
+
+echo "Creating Machine Image ($MACHINE_IMAGE_NAME_DEMO) from VM ($TEMP_INSTANCE_DEMO)..."
+gcloud compute machine-images create $MACHINE_IMAGE_NAME_DEMO \
+    --source-instance=$TEMP_INSTANCE_DEMO \
+    --source-instance-zone=$ZONE \
+    --project=$DEMO_PROJECT_ID \
+    --storage-location=$STORAGE_LOCATION
+
+echo "Verifying Machine Image in DEMO ($MACHINE_IMAGE_NAME_DEMO)..."
+gcloud compute machine-images list --project=$DEMO_PROJECT_ID --filter="name=$MACHINE_IMAGE_NAME_DEMO"
+
+echo "Deleting temporary VM ($TEMP_INSTANCE_DEMO)..."
+gcloud compute instances delete $TEMP_INSTANCE_DEMO --zone=$ZONE --quiet
+
+echo "Machine Image successfully created in both DEV and DEMO projects!"
