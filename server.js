@@ -1,7 +1,7 @@
 require("dotenv").config();
 const app = require("./app");
 const sequelize = require("./config/database");
-const healthCheck = require("./models/healthCheck");
+const healthCheck = require("./models/HealthCheck");
 const { initializeDatabase } = require("./utils/dbInitializer");
 
 const PORT = process.env.PORT;
