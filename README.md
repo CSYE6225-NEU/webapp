@@ -15,10 +15,11 @@ Before you begin, ensure you have the following installed on your system:
 1. Create a `.env` file in the root directory with the following variables:
 
 ```env
-PORT=8080
+PORT= your_application port
+DB_PORT=3306
 DB_NAME=your_database_name
 DB_USER=your_database_user
-DB_PASSWORD=your_database_password
+MYSQL_ROOT_PASSWORD=your_database_password
 DB_HOST=localhost
 ```
 

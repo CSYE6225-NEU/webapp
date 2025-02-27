@@ -6,7 +6,7 @@ async function createDatabase() {
     const connection = await mysql.createConnection({
       host: process.env.DB_HOST,
       user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
+      password: process.env.MYSQL_ROOT_PASSWORD,
     });
 
     await connection.query(
