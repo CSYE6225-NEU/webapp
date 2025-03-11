@@ -1,6 +1,6 @@
 name: Validate Packer Script
 on:
-  push:
+  pull_request:
     branches:
       - main
 jobs:
