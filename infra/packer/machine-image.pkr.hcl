@@ -6,7 +6,7 @@ packer {
     }
     googlecompute = {
       source  = "github.com/hashicorp/googlecompute"
-      version = ">= 1.0.0"
+      version = ">         = 1.0.0"
     }
   }
 }
@@ -66,7 +66,7 @@ variable "gcp_storage_location" {
 
 # AWS AMI Build
 source "amazon-ebs" "ubuntu" {
-  region                      = var.aws_region
+  region                      = var.bad
   source_ami                  = var.aws_source_ami
   instance_type               = var.instance_type
   ssh_username                = "ubuntu"
