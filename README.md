@@ -605,4 +605,4 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/) specifica
 - `style`: Code style changes
 - `refactor`: Code refactoring
 - `test`: Adding or updating tests
-- `chore`: Build process or auxiliary tool changes
+- `chore`: Build process or auxiliary tool change
