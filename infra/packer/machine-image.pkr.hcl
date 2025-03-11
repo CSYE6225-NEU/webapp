@@ -66,7 +66,7 @@ variable "gcp_storage_location" {
 
 # AWS AMI Build
 source "amazon-ebs" "ubuntu" {
-  region                      = var.aws_region
+  region                      = var.bad
   source_ami                  = var.aws_source_ami
   instance_type               = var.instance_type
   ssh_username                = "ubuntu"
