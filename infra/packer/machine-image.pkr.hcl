@@ -11,19 +11,24 @@ packer {
   }
 }
 
+# AWS Configuration Variables
+# ===========================================================
 variable "aws_region" {
-  type    = string
-  default = "us-east-1"
+  type        = string
+  default     = "us-east-1"
+  description = "AWS region for building the AMI"
 }
 
 variable "aws_source_ami" {
-  type    = string
-  default = "ami-0812f893ed55215a7" // Ubuntu 24.04 LTS
+  type        = string
+  default     = "ami-0812f893ed55215a7" // Ubuntu 24.04 LTS
+  description = "Base AMI ID to use for the build"
 }
 
 variable "instance_type" {
-  type    = string
-  default = "t2.micro"
+  type        = string
+  default     = "t2.micro"
+  description = "EC2 instance type to use for the build"
 }
 
 variable "demo_account_id" {
@@ -32,6 +37,8 @@ variable "demo_account_id" {
   description = "AWS account ID to share the AMI with"
 }
 
+# GCP Configuration Variables
+# ===========================================================
 variable "gcp_project_id" {
   type        = string
   default     = "dev-project-452101"
@@ -45,26 +52,31 @@ variable "gcp_demo_project_id" {
 }
 
 variable "gcp_source_image" {
-  type    = string
-  default = "ubuntu-2404-noble-amd64-v20250214"
+  type        = string
+  default     = "ubuntu-2404-noble-amd64-v20250214"
+  description = "Base GCP image to use for the build"
 }
 
 variable "gcp_zone" {
-  type    = string
-  default = "us-east1-b"
+  type        = string
+  default     = "us-east1-b"
+  description = "GCP zone for building the image"
 }
 
 variable "gcp_machine_type" {
-  type    = string
-  default = "e2-medium"
+  type        = string
+  default     = "e2-medium"
+  description = "GCP machine type to use for the build"
 }
 
 variable "gcp_storage_location" {
-  type    = string
-  default = "us"
+  type        = string
+  default     = "us"
+  description = "GCP storage location for the machine image"
 }
 
-# AWS AMI Build
+# AWS AMI Build Configuration
+# ===========================================================
 source "amazon-ebs" "ubuntu" {
   region                      = var.aws_region
   source_ami                  = var.aws_source_ami
@@ -79,7 +91,8 @@ source "amazon-ebs" "ubuntu" {
   ami_users = [var.demo_account_id]
 }
 
-# GCP Image Build
+# GCP Image Build Configuration
+# ===========================================================
 source "googlecompute" "ubuntu" {
   project_id           = var.gcp_project_id
   source_image         = var.gcp_source_image
@@ -92,17 +105,21 @@ source "googlecompute" "ubuntu" {
   wait_to_add_ssh_keys = "10s"
 }
 
+# Build Definition
+# ===========================================================
 build {
   sources = [
     "source.amazon-ebs.ubuntu",
     "source.googlecompute.ubuntu"
   ]
 
+  # Copy application files to the image
   provisioner "file" {
     source      = "dist/webapp"
     destination = "/tmp/webapp"
   }
 
+  # Copy setup script and service definition
   provisioner "file" {
     source      = "setup.sh"
     destination = "/tmp/setup.sh"
@@ -113,6 +130,7 @@ build {
     destination = "/tmp/webapp.service"
   }
 
+  # Execute the setup script
   provisioner "shell" {
     inline = [
       "chmod +x /tmp/setup.sh",
