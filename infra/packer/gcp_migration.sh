@@ -14,7 +14,7 @@ DEMO_GCP_KEY="gcp-demo-credentials.json"
 MACHINE_TYPE="e2-medium"  # Matches gcp_vm_type
 STORAGE_LOCATION="us"     # Matches gcp_storage_region
 TIMESTAMP=$(date +%s)
-IMAGE_PREFIX="custom-nodejs-mysql"
+IMAGE_PREFIX="webapp-nodejs-mysql"
 
 # Helper Functions
 # ====================================================

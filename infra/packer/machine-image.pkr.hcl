@@ -82,8 +82,8 @@ source "amazon-ebs" "ubuntu" {
   source_ami                  = var.aws_base_ami
   instance_type               = var.aws_vm_size
   ssh_username                = "ubuntu"
-  ami_name                    = "custom-nodejs-mysql-{{timestamp}}"
-  ami_description             = "Custom image with Node.js binary and MySQL"
+  ami_name                    = "webapp-nodejs-mysql-{{timestamp}}"
+  ami_description             = "Custom webapp image with Node.js binary and MySQL"
   associate_public_ip_address = true
   ssh_timeout                 = "10m"
 
@@ -98,9 +98,9 @@ source "googlecompute" "ubuntu" {
   source_image         = var.gcp_base_image
   machine_type         = var.gcp_vm_type
   zone                 = var.gcp_build_zone
-  image_name           = "custom-nodejs-mysql-{{timestamp}}"
-  image_family         = "custom-images"
-  image_description    = "Custom GCP image with Node.js and MySQL"
+  image_name           = "webapp-nodejs-mysql-{{timestamp}}"
+  image_family         = "webapp-images"
+  image_description    = "Webapp GCP image with Node.js and MySQL"
   ssh_username         = "ubuntu"
   wait_to_add_ssh_keys = "10s"
 }

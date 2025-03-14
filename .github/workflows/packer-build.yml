@@ -178,8 +178,8 @@ jobs:
           gcloud config set project ${GCP_DEMO_PROJECT_ID}
           
           # List and verify images in DEMO project
-          gcloud compute images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:copy-custom-nodejs-mysql" --limit=5
-          gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-custom-nodejs-mysql" --limit=5
+          gcloud compute images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:copy-webapp-nodejs-mysql" --limit=5
+          gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-webapp-nodejs-mysql" --limit=5
 
       # Run the AMI migration script after AWS AMI is verified
       - name: Migrate AWS AMI to Target Environment

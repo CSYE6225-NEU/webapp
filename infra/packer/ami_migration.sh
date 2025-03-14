@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Purpose: This script copies the latest custom NodeJS/MySQL AMI from a development AWS account to a demo AWS account.
+# Purpose: This script copies the latest webapp NodeJS/MySQL AMI from a development AWS account to a demo AWS account.
 # It handles the entire process including authentication, finding the latest AMI, sharing permissions, and copying.
 
 # Configuration
@@ -14,8 +14,8 @@ TARGET_AWS_SECRET_KEY="${DEMO_AWS_SECRET_ACCESS_KEY}"
 # AWS region and AMI naming - matches aws_build_region
 AWS_REGION="us-east-1"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-NEW_AMI_NAME="Copied-custom-nodejs-mysql-${TIMESTAMP}"
-AMI_NAME_PATTERN="custom-nodejs-mysql-*"
+NEW_AMI_NAME="Copied-webapp-nodejs-mysql-${TIMESTAMP}"
+AMI_NAME_PATTERN="webapp-nodejs-mysql-*"
 
 # Helper Functions
 # ============================================================
