@@ -1,0 +1,85 @@
+name: 'Setup Cloud Provider Credentials'
+description: 'Configures credentials for AWS and/or GCP'
+
+inputs:
+  provider:
+    description: 'Cloud provider to configure (aws, gcp, or both)'
+    required: true
+  aws-access-key:
+    description: 'AWS Access Key ID'
+    required: false
+    default: ''
+  aws-secret-key:
+    description: 'AWS Secret Access Key'
+    required: false
+    default: ''
+  aws-region:
+    description: 'AWS Region'
+    required: false
+    default: 'us-east-1'
+  gcp-key:
+    description: 'GCP Service Account Key (JSON)'
+    required: false
+    default: ''
+  setup-gcloud-cli:
+    description: 'Whether to set up gcloud CLI'
+    required: false
+    default: 'false'
+  credentials-filename:
+    description: 'Filename for GCP credentials'
+    required: false
+    default: 'gcp-credentials.json'
+
+outputs:
+  gcp-project-id:
+    description: 'GCP Project ID'
+    value: ${{ steps.setup-gcp.outputs.project-id }}
+  gcp-email:
+    description: 'GCP Service Account Email'
+    value: ${{ steps.setup-gcp.outputs.email }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Configure AWS Credentials
+      if: ${{ inputs.provider == 'aws' || inputs.provider == 'both' }}
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key }}
+        aws-secret-access-key: ${{ inputs.aws-secret-key }}
+        aws-region: ${{ inputs.aws-region }}
+    
+    - name: Configure GCP Credentials
+      if: ${{ inputs.provider == 'gcp' || inputs.provider == 'both' }}
+      id: setup-gcp
+      shell: bash
+      run: |
+        # Create credentials file
+        echo '${{ inputs.gcp-key }}' > ${{ inputs.credentials-filename }}
+        
+        # Extract and set project ID and email
+        PROJECT_ID=$(echo '${{ inputs.gcp-key }}' | jq -r '.project_id')
+        EMAIL=$(echo '${{ inputs.gcp-key }}' | jq -r '.client_email')
+        
+        # Set environment variables
+        echo "GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/${{ inputs.credentials-filename }}" >> $GITHUB_ENV
+        echo "project-id=${PROJECT_ID}" >> $GITHUB_OUTPUT
+        echo "email=${EMAIL}" >> $GITHUB_OUTPUT
+    
+    - name: Setup gcloud CLI
+      if: ${{ (inputs.provider == 'gcp' || inputs.provider == 'both') && inputs.setup-gcloud-cli == 'true' }}
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        service_account_key: ${{ inputs.gcp-key }}
+        export_default_credentials: true
+    
+    - name: Authenticate GCP Service Account
+      if: ${{ (inputs.provider == 'gcp' || inputs.provider == 'both') && inputs.setup-gcloud-cli == 'true' }}
+      shell: bash
+      run: |
+        # Authenticate the service account
+        gcloud auth activate-service-account --key-file="${{ inputs.credentials-filename }}"
+        
+        # Set the active account and project
+        gcloud config set account ${{ steps.setup-gcp.outputs.email }}
+        gcloud config set project ${{ steps.setup-gcp.outputs.project-id }}

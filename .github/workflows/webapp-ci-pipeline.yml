@@ -1,17 +1,48 @@
-name: WebApp CI Pipeline
+# .github/workflows/pr-check.yml
+name: WebApp PR Validation
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
 
+env:
+  NODE_VERSION: '18'
+  BUILD_PATH: 'infra/packer/dist'
+  BINARY_NAME: 'webapp'
+
 jobs:
+  validate:
+    name: Validate Code
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
+      - name: Lint Code
+        run: |
+          if [ -f .eslintrc.js ] || [ -f .eslintrc.json ]; then
+            npx eslint . --max-warnings=0
+          else
+            echo "No ESLint configuration found. Skipping linting."
+          fi
+        continue-on-error: true
+      
+      - name: Security Scan
+        run: npm audit --production
+        continue-on-error: true
+
   run-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
+    needs: validate
+    
     services:
       mysql:
         image: mysql:8.0
@@ -20,28 +51,21 @@ jobs:
           MYSQL_DATABASE: ${{ secrets.DB_NAME }}
         ports:
           - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -p${{ secrets.MYSQL_ROOT_PASSWORD }}"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        
-      - name: Update and Install System Dependencies
-        run: sudo apt update && sudo apt upgrade -y
-        
-      - name: Preparing Mysql
-        run: |
-          for i in {30..0}; do
-            if mysqladmin ping -h 127.0.0.1 -uroot -p"${{ secrets.MYSQL_ROOT_PASSWORD }}" --silent; then
-              echo "MySQL is up and running"
-              break
-            fi
-            echo "Waiting for MySQL..."
-            sleep 2
-          done
-          if [ "$i" = 0 ]; then
-            echo "ERROR: MySQL failed to start"
-            exit 1
-          fi
-          
+      
+      - name: Setup Environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
       - name: Create Environment File
         run: |
           cat <<EOF > .env
@@ -52,63 +76,32 @@ jobs:
           DB_NAME=${{ secrets.DB_NAME }}
           PORT=${{ secrets.PORT }}
           EOF
-          
-      - name: Setup Node
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-          
-      - name: Install Project Dependencies
-        run: npm install
-        
+      
       - name: Run Tests
         run: npm test
 
-  validate_packer:
-    name: Validate Packer Script
+  validate-packer:
+    name: Validate Infrastructure Code
     runs-on: ubuntu-latest
     needs: run-tests
     
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-          
-      - name: Install Dependencies
-        run: npm ci
-        
-      - name: Install pkg 
-        run: npm install -g pkg
-        
-      - name: Generate Executable
-        run: |
-          # Create the output directory if it doesn't exist
-          mkdir -p infra/packer/dist
-          
-          # Build the binary
-          pkg server.js --output infra/packer/dist/webapp --targets node18-linux-x64
-          
-          # Make it executable
-          chmod +x infra/packer/dist/webapp
-          
-          # Verify the binary was created
-          if [ -f infra/packer/dist/webapp ]; then
-            echo "Build complete! Binary located at infra/packer/dist/webapp"
-          else
-            echo "Build failed! Binary not found"
-            exit 1
-          fi
       
-      - name: Install Packer
-        uses: hashicorp/setup-packer@v2
+      - name: Setup Environment
+        uses: ./.github/actions/setup-environment
         with:
-          version: latest
+          node-version: ${{ env.NODE_VERSION }}
+          install-pkg: 'true'
+          install-packer: 'true'
+      
+      - name: Build Binary
+        uses: ./.github/actions/build-binary
+        with:
+          output-path: ${{ env.BUILD_PATH }}
+          binary-name: ${{ env.BINARY_NAME }}
+          node-version: ${{ env.NODE_VERSION }}
       
       - name: Initialize Packer
         working-directory: infra/packer
@@ -126,4 +119,39 @@ jobs:
       
       - name: Validate Packer Configuration
         working-directory: infra/packer
-        run: packer validate machine-image.pkr.hcl
+        run: |
+          packer validate \
+            -var "target_account_id=dummy-account" \
+            -var "gcp_dev_project=dummy-project" \
+            -var "gcp_target_project=dummy-project" \
+            -var "aws_build_region=us-east-1" \
+            -var "gcp_build_zone=us-east1-b" \
+            -var "aws_vm_size=t2.micro" \
+            -var "gcp_vm_type=e2-medium" \
+            -var "gcp_storage_region=us" \
+            machine-image.pkr.hcl
+
+  workflow-summary:
+    name: PR Validation Summary
+    if: always()
+    needs: [validate, run-tests, validate-packer]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Generate Status Report
+        run: |
+          echo "# Pull Request Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "Run completed at $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Job Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Code Validation: ${{ needs.validate.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Unit Tests: ${{ needs.run-tests.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Infrastructure Validation: ${{ needs.validate-packer.result }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.validate.result }}" == "success" && "${{ needs.run-tests.result }}" == "success" && "${{ needs.validate-packer.result }}" == "success" ]]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All checks have passed successfully. This PR is ready for review." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Some checks have failed. Please review the job logs for details." >> $GITHUB_STEP_SUMMARY
+          fi

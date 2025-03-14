@@ -1,0 +1,41 @@
+# .github/actions/build-binary/action.yml
+name: 'Build Application Binary'
+description: 'Creates a standalone executable from the Node.js application'
+
+inputs:
+  output-path:
+    description: 'Output directory for the binary'
+    required: false
+    default: 'infra/packer/dist'
+  binary-name:
+    description: 'Name of the output binary'
+    required: false
+    default: 'webapp'
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '18'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Create Output Directory
+      shell: bash
+      run: mkdir -p ${{ inputs.output-path }}
+    
+    - name: Build Binary with pkg
+      shell: bash
+      run: |
+        pkg server.js --output ${{ inputs.output-path }}/${{ inputs.binary-name }} --targets node${{ inputs.node-version }}-linux-x64
+        chmod +x ${{ inputs.output-path }}/${{ inputs.binary-name }}
+    
+    - name: Verify Binary
+      shell: bash
+      run: |
+        if [ -f ${{ inputs.output-path }}/${{ inputs.binary-name }} ]; then
+          echo "Build complete! Binary located at ${{ inputs.output-path }}/${{ inputs.binary-name }}"
+          ls -lah ${{ inputs.output-path }}/
+        else
+          echo "Build failed! Binary not found"
+          exit 1
+        fi
