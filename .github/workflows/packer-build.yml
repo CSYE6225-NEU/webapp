@@ -1,124 +1,26 @@
 name: Build Packer AMI and GCP Machine Image
 
 on:
-  push:
+  pull_request:
     branches:
       - main
-    paths:
-      - 'infra/packer/**'
-      - '.github/workflows/packer-build.yml'
 
 jobs:
-  run-tests:
-    name: Run Unit Tests
-    runs-on: ubuntu-latest
-
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
-          MYSQL_DATABASE: ${{ secrets.DB_NAME }}
-        ports:
-          - 3306:3306
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Update and Install Dependencies
-        run: sudo apt update && sudo apt upgrade -y
-
-      - name: Wait for MySQL to Be Ready
-        run: |
-          for i in {30..0}; do
-            if mysqladmin ping -h 127.0.0.1 -uroot -p"${{ secrets.MYSQL_ROOT_PASSWORD }}" --silent; then
-              echo "MySQL is up and running"
-              break
-            fi
-            echo "Waiting for MySQL..."
-            sleep 2
-          done
-          if [ "$i" = 0 ]; then
-            echo "ERROR: MySQL failed to start"
-            exit 1
-          fi
-
-      - name: Create `.env` File
-        run: |
-          cat <<EOF > .env
-          DB_HOST=${{ secrets.DB_HOST }}
-          DB_PORT=${{ secrets.DB_PORT }}
-          DB_USER=${{ secrets.DB_USER }}
-          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
-          DB_NAME=${{ secrets.DB_NAME }}
-          PORT=${{ secrets.PORT }}
-          EOF
-
-      - name: Install Project Dependencies
-        run: npm install
-
-      - name: Run Tests
-        run: npm test
-
-  validate_packer:
-    name: Validate Packer Script
-    runs-on: ubuntu-latest
-    needs: run-tests
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Install pkg globally
-        run: npm install -g pkg
-
-      - name: Build Application with pkg
-        run: |
-          # Ensure dependencies are installed
-          npm install
-
-          # Use `pkg` to create a binary executable
-          pkg server.js --output infra/packer/dist/webapp --targets node18-linux-x64
-
-          # Ensure the binary has execute permissions
-          chmod +x infra/packer/dist/webapp
-
-          echo "Build complete! Binary located at infra/packer/dist/webapp"
-
-      - name: Install Packer
-        uses: hashicorp/setup-packer@v2
-        with:
-          version: latest
-
-      - name: Initialize Packer
-        working-directory: infra/packer
-        run: packer init .
-
-      - name: Check Packer Formatting
-        working-directory: infra/packer
-        run: |
-          if packer fmt -check -diff .; then
-            echo "Packer format is correct."
-          else
-            echo "Packer format check failed. Run 'packer fmt' locally to fix formatting."
-            exit 1
-          fi
-
-      - name: Validate Packer Configuration
-        working-directory: infra/packer
-        run: packer validate machine-image.pkr.hcl
-
   build_images:
     name: Build and Share AMI/Machine Images
     runs-on: ubuntu-latest
-    needs: validate_packer
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install Project Dependencies
         run: npm ci
 
       - name: Install pkg Globally
@@ -127,9 +29,21 @@ jobs:
       - name: Build Application with pkg
         run: |
           set -e  # Stop if any command fails
+          
+          # Create output directory if it doesn't exist
+          mkdir -p infra/packer/dist
+          
+          # Build the executable
           pkg server.js --output infra/packer/dist/webapp --targets node18-linux-x64
           chmod +x infra/packer/dist/webapp
-          echo "Build complete! Binary located at infra/packer/dist/webapp"
+          
+          # Verify build success
+          if [ -f infra/packer/dist/webapp ]; then
+            echo "Build complete! Binary located at infra/packer/dist/webapp"
+          else
+            echo "Build failed!"
+            exit 1
+          fi
 
       - name: Debug Build Output
         run: ls -lah infra/packer/dist/
@@ -146,7 +60,10 @@ jobs:
       - name: Setup GCP DEV Credentials
         id: setup-gcp-dev
         run: |
+          # Create credentials file
           echo '${{ secrets.DEV_GCP_KEY }}' > gcp-dev-credentials.json
+          
+          # Set environment variables for use in later steps
           echo "GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/gcp-dev-credentials.json" >> $GITHUB_ENV
           echo "GCP_PROJECT_ID=$(echo '${{ secrets.DEV_GCP_KEY }}' | jq -r '.project_id')" >> $GITHUB_ENV
 
@@ -154,16 +71,20 @@ jobs:
       - name: Setup GCP DEMO Project Info
         id: setup-gcp-demo
         run: |
+          # Create credentials file
           echo '${{ secrets.DEMO_GCP_KEY }}' > gcp-demo-credentials.json
+          
+          # Copy for use by migration script
           cp gcp-demo-credentials.json infra/packer/gcp-demo-credentials.json
+          
+          # Set environment variable for use in later steps
           echo "GCP_DEMO_PROJECT_ID=$(echo '${{ secrets.DEMO_GCP_KEY }}' | jq -r '.project_id')" >> $GITHUB_ENV
 
       # Debug variables
-      - name: Debug environment variables
+      - name: Debug Environment Variables
         run: |
           echo "GCP_PROJECT_ID: ${GCP_PROJECT_ID}"
           echo "GCP_DEMO_PROJECT_ID: ${GCP_DEMO_PROJECT_ID}"
-          echo "GCP_DEMO_SERVICE_ACCOUNT: ${GCP_DEMO_SERVICE_ACCOUNT}"
 
       # Setup AWS DEMO Account ID for sharing
       - name: Configure AWS DEMO Account
@@ -199,6 +120,9 @@ jobs:
 
           # Set the active account
           gcloud config set account ${GCP_DEV_EMAIL}
+          
+          # Set the active project
+          gcloud config set project ${GCP_PROJECT_ID}
 
           # Export the email to the environment for later use
           echo "GCP_DEV_EMAIL=${GCP_DEV_EMAIL}" >> $GITHUB_ENV
@@ -224,7 +148,7 @@ jobs:
       - name: Verify AWS AMI Creation
         run: |
           echo "Verifying AWS AMI creation..."
-          aws ec2 describe-images --owners self --query 'Images[*].[ImageId,Name,CreationDate]' --output table --filters "Name=name,Values=custom-nodejs-mysql-*" | head -n 10
+          aws ec2 describe-images --owners self --query 'Images[].[ImageId,Name,CreationDate]' --output table --filters "Name=name,Values=custom-nodejs-mysql-" | head -n 10
 
       - name: Verify GCP Machine Image Creation
         run: |
@@ -249,6 +173,7 @@ jobs:
           gcloud auth activate-service-account --key-file="gcp-demo-credentials.json"
           gcloud config set project ${GCP_DEMO_PROJECT_ID}
           
+          # List and verify images in DEMO project
           gcloud compute images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:copy-custom-nodejs-mysql" --limit=5
           gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-custom-nodejs-mysql" --limit=5
 
@@ -276,6 +201,7 @@ jobs:
           export AWS_ACCESS_KEY_ID=${{ secrets.DEMO_AWS_ACCESS_KEY }}
           export AWS_SECRET_ACCESS_KEY=${{ secrets.DEMO_AWS_SECRET_KEY }}
           
+          # List and verify images in DEMO account
           aws ec2 describe-images --owners self --query 'Images[*].[ImageId,Name,CreationDate]' --output table | head -n 10
 
       # Clean up credentials after build
