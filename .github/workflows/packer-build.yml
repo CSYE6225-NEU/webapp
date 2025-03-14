@@ -1,4 +1,4 @@
-name: Build Packer AMI and GCP Machine Image
+name: Build and Migrate Infrastructure Images
 
 on:
   pull_request:
@@ -6,8 +6,8 @@ on:
       - main
 
 jobs:
-  build_images:
-    name: Build and Share AMI/Machine Images
+  infrastructure_image_pipeline:
+    name: Create and Distribute Cloud Images
     runs-on: ubuntu-latest
 
     steps:
@@ -26,7 +26,7 @@ jobs:
       - name: Install pkg Globally
         run: npm install -g pkg
 
-      - name: build application executable
+      - name: Create Node.js Application Binary
         run: |
           set -e  # Stop if any command fails
           
@@ -49,7 +49,7 @@ jobs:
         run: ls -lah infra/packer/dist/
 
       # AWS DEV Configuration
-      - name: gcp aws credentials config
+      - name: Configure AWS Development Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.DEV_AWS_ACCESS_KEY }}
@@ -57,7 +57,7 @@ jobs:
           aws-region: us-east-1
 
       # Setup GCP DEV credentials from JSON
-      - name: gcp dev credentials config
+      - name: Configure GCP Development Credentials
         id: setup-gcp-dev
         run: |
           # Create credentials file
@@ -68,7 +68,7 @@ jobs:
           echo "GCP_PROJECT_ID=$(echo '${{ secrets.DEV_GCP_KEY }}' | jq -r '.project_id')" >> $GITHUB_ENV
 
       # Setup GCP DEMO credentials for sharing
-      - name: gcp demo credentials config
+      - name: Configure GCP Target Environment Credentials
         id: setup-gcp-demo
         run: |
           # Create credentials file
@@ -81,7 +81,7 @@ jobs:
           echo "GCP_DEMO_PROJECT_ID=$(echo '${{ secrets.DEMO_GCP_KEY }}' | jq -r '.project_id')" >> $GITHUB_ENV
 
       # Setup AWS DEMO Account ID for sharing
-      - name: configure aws account
+      - name: Identify AWS Target Account
         id: setup-aws-demo
         run: |
           # Temporarily use DEMO credentials to get account ID
@@ -103,7 +103,7 @@ jobs:
           service_account_key: ${{ secrets.DEV_GCP_KEY }}
           export_default_credentials: true
 
-      - name: Authenticate User for GCP
+      - name: Authenticate GCP Service Account
         id: authenticate-gcp-user
         run: |
           # Extract client_email from the JSON credentials
@@ -130,17 +130,37 @@ jobs:
         working-directory: infra/packer
         run: packer init .
 
-      - name: Build AMI and Machine Images
+      - name: Build Multi-Cloud Infrastructure Images
         working-directory: infra/packer
         run: |
+          # First validate the template
+          echo "Validating Packer template..."
+          packer validate \
+            -var "target_account_id=${DEMO_ACCOUNT_ID}" \
+            -var "gcp_dev_project=${GCP_PROJECT_ID}" \
+            -var "gcp_target_project=${GCP_DEMO_PROJECT_ID}" \
+            -var "aws_build_region=us-east-1" \
+            -var "gcp_build_zone=us-east1-b" \
+            -var "aws_vm_size=t2.micro" \
+            -var "gcp_vm_type=e2-medium" \
+            -var "gcp_storage_region=us" \
+            machine-image.pkr.hcl
+
+          # Then build if validation succeeds
+          echo "Building AMI and Machine images..."
           packer build \
-            -var "demo_account_id=${DEMO_ACCOUNT_ID}" \
-            -var "gcp_project_id=${GCP_PROJECT_ID}" \
-            -var "gcp_demo_project_id=${GCP_DEMO_PROJECT_ID}" \
+            -var "target_account_id=${DEMO_ACCOUNT_ID}" \
+            -var "gcp_dev_project=${GCP_PROJECT_ID}" \
+            -var "gcp_target_project=${GCP_DEMO_PROJECT_ID}" \
+            -var "aws_build_region=us-east-1" \
+            -var "gcp_build_zone=us-east1-b" \
+            -var "aws_vm_size=t2.micro" \
+            -var "gcp_vm_type=e2-medium" \
+            -var "gcp_storage_region=us" \
             machine-image.pkr.hcl
 
       # Run the GCP migration script after GCP Machine Image is verified
-      - name: Copy MachineImage to Demo Account
+      - name: Migrate GCP Image to Target Environment
         run: |
           echo "Running GCP migration script..."
           
@@ -162,7 +182,7 @@ jobs:
           gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-custom-nodejs-mysql" --limit=5
 
       # Run the AMI migration script after AWS AMI is verified
-      - name: Copy AMI to Demo Account
+      - name: Migrate AWS AMI to Target Environment
         run: |
           echo "Running AMI migration script..."
           
@@ -189,7 +209,7 @@ jobs:
           aws ec2 describe-images --owners self --query 'Images[*].[ImageId,Name,CreationDate]' --output table | head -n 10
 
       # Clean up credentials after build
-      - name: Clean Up Credentials
+      - name: Secure Credential Cleanup
         if: always()
         run: |
           rm -f gcp-dev-credentials.json gcp-demo-credentials.json
