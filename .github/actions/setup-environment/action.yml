@@ -1,5 +1,5 @@
 name: 'Setup Development Environment'
-description: 'Sets up Node.js and installs dependencies'
+description: 'Sets up Node.js, dependencies and development tools'
 
 inputs:
   node-version:

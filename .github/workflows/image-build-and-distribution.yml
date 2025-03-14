@@ -1,88 +1,51 @@
-# .github/workflows/image-build.yml
-name: Build and Distribute Infrastructure Images
+name: Build and Migrate Infrastructure Images
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
-    inputs:
-      target_environment:
-        description: 'Target environment'
-        required: true
-        default: 'demo'
-        type: choice
-        options:
-          - dev
-          - demo
-
-env:
-  NODE_VERSION: '18'
-  BUILD_PATH: 'infra/packer/dist'
-  BINARY_NAME: 'webapp'
 
 jobs:
-  build-binary:
-    name: Build Application Binary
+  infrastructure_image_pipeline:
+    name: Create and Distribute Cloud Images
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-      
+
+      # Set up development environment
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '18'
           install-pkg: 'true'
-      
-      - name: Build Binary
+          install-packer: 'true'
+
+      # Build application binary
+      - name: Build Application Binary
         uses: ./.github/actions/build-binary
         with:
-          output-path: ${{ env.BUILD_PATH }}
-          binary-name: ${{ env.BINARY_NAME }}
-          node-version: ${{ env.NODE_VERSION }}
-      
-      - name: Upload Binary Artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: webapp-binary
-          path: ${{ env.BUILD_PATH }}/${{ env.BINARY_NAME }}
-          retention-days: 1
+          output-path: 'infra/packer/dist'
+          binary-name: 'webapp'
+          node-version: '18'
 
-  build-aws-image:
-    name: Build AWS AMI
-    needs: build-binary
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      
-      - name: Download Binary Artifact
-        uses: actions/download-artifact@v3
-        with:
-          name: webapp-binary
-          path: ${{ env.BUILD_PATH }}
-      
-      - name: Make Binary Executable
-        run: chmod +x ${{ env.BUILD_PATH }}/${{ env.BINARY_NAME }}
-      
-      - name: Setup Environment
-        uses: ./.github/actions/setup-environment
-        with:
-          install-packer: 'true'
-      
-      - name: Configure AWS Development Credentials
+      - name: Debug Build Output
+        run: ls -lah infra/packer/dist/
+
+      # Setup cloud credentials
+      - name: Setup Cloud Credentials
         uses: ./.github/actions/cloud-credentials
         with:
-          provider: 'aws'
           aws-access-key: ${{ secrets.DEV_AWS_ACCESS_KEY }}
           aws-secret-key: ${{ secrets.DEV_AWS_SECRET_KEY }}
           aws-region: 'us-east-1'
-      
-      - name: Setup Target AWS Account ID
-        id: setup-aws-target
+          gcp-key: ${{ secrets.DEV_GCP_KEY }}
+          demo-gcp-key: ${{ secrets.DEMO_GCP_KEY }}
+
+      # Setup AWS DEMO Account ID for sharing
+      - name: Identify AWS Target Account
+        id: setup-aws-demo
         run: |
           # Temporarily use DEMO credentials to get account ID
           export AWS_ACCESS_KEY_ID=${{ secrets.DEMO_AWS_ACCESS_KEY }}
@@ -91,152 +54,121 @@ jobs:
           # Get account ID and set as environment variable
           DEMO_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           echo "DEMO_ACCOUNT_ID=${DEMO_ACCOUNT_ID}" >> $GITHUB_ENV
-          echo "Target AWS Account ID: ${DEMO_ACCOUNT_ID}"
+          echo "DEMO_ACCOUNT_ID: ${DEMO_ACCOUNT_ID}"
           
           # Switch back to DEV credentials for building
           unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
-      
+
+      # Install and authenticate gcloud CLI with DEV credentials
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          service_account_key: ${{ secrets.DEV_GCP_KEY }}
+          export_default_credentials: true
+
+      - name: Authenticate GCP Service Account
+        id: authenticate-gcp-user
+        run: |
+          # Extract client_email from the JSON credentials
+          GCP_DEV_EMAIL=$(echo '${{ secrets.DEV_GCP_KEY }}' | jq -r '.client_email')
+
+          # Authenticate the service account
+          gcloud auth activate-service-account --key-file="gcp-dev-credentials.json"
+
+          # Set the active account
+          gcloud config set account ${GCP_DEV_EMAIL}
+          
+          # Set the active project
+          gcloud config set project ${GCP_PROJECT_ID}
+
+          # Export the email to the environment for later use
+          echo "GCP_DEV_EMAIL=${GCP_DEV_EMAIL}" >> $GITHUB_ENV
+
       - name: Initialize Packer
         working-directory: infra/packer
         run: packer init .
-      
-      - name: Build AWS AMI
+
+      # Build multi-cloud infrastructure images
+      - name: Build Multi-Cloud Infrastructure Images
         working-directory: infra/packer
         run: |
-          # Build AWS AMI
-          packer build \
-            -only="amazon-ebs.webapp" \
+          # First validate the template
+          echo "Validating Packer template..."
+          packer validate \
             -var "target_account_id=${DEMO_ACCOUNT_ID}" \
-            -var "gcp_dev_project=unused-in-aws-build" \
-            -var "gcp_target_project=unused-in-aws-build" \
+            -var "gcp_dev_project=${GCP_PROJECT_ID}" \
+            -var "gcp_target_project=${GCP_DEMO_PROJECT_ID}" \
             -var "aws_build_region=us-east-1" \
+            -var "gcp_build_zone=us-east1-b" \
             -var "aws_vm_size=t2.micro" \
+            -var "gcp_vm_type=e2-medium" \
+            -var "gcp_storage_region=us" \
             machine-image.pkr.hcl
-      
+
+          # Then build if validation succeeds
+          echo "Building AMI and Machine images..."
+          packer build \
+            -var "target_account_id=${DEMO_ACCOUNT_ID}" \
+            -var "gcp_dev_project=${GCP_PROJECT_ID}" \
+            -var "gcp_target_project=${GCP_DEMO_PROJECT_ID}" \
+            -var "aws_build_region=us-east-1" \
+            -var "gcp_build_zone=us-east1-b" \
+            -var "aws_vm_size=t2.micro" \
+            -var "gcp_vm_type=e2-medium" \
+            -var "gcp_storage_region=us" \
+            machine-image.pkr.hcl
+
+      # Run the GCP migration script
+      - name: Migrate GCP Image to Target Environment
+        run: |
+          echo "Running GCP migration script..."
+          
+          # Make the script executable
+          chmod +x infra/packer/gcp_migration.sh
+          
+          # Run the script with zone parameter
+          ./infra/packer/gcp_migration.sh us-east1-b
+          
+          # Verify the machine image in the DEMO project
+          echo "Verifying Machine Image in DEMO project..."
+          
+          # Temporarily authenticate with DEMO credentials to verify
+          gcloud auth activate-service-account --key-file="gcp-demo-credentials.json"
+          gcloud config set project ${GCP_DEMO_PROJECT_ID}
+          
+          # List and verify images in DEMO project
+          gcloud compute images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:copy-webapp-nodejs-mysql" --limit=5
+          gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-webapp-nodejs-mysql" --limit=5
+
+      # Run the AMI migration script
       - name: Migrate AWS AMI to Target Environment
         run: |
-          # Set environment variables for the script
+          echo "Running AMI migration script..."
+          
+          # Create environment variables for the script
           export DEV_AWS_ACCESS_KEY_ID="${{ secrets.DEV_AWS_ACCESS_KEY }}"
           export DEV_AWS_SECRET_ACCESS_KEY="${{ secrets.DEV_AWS_SECRET_KEY }}"
           export DEMO_AWS_ACCESS_KEY_ID="${{ secrets.DEMO_AWS_ACCESS_KEY }}"
           export DEMO_AWS_SECRET_ACCESS_KEY="${{ secrets.DEMO_AWS_SECRET_KEY }}"
           
-          # Make the script executable and run it
+          # Make the script executable
           chmod +x infra/packer/ami_migration.sh
+          
+          # Run the script
           ./infra/packer/ami_migration.sh
-      
-      - name: Verify AMI Migration
-        run: |
+          
+          # Verify the AMI in the DEMO account
+          echo "Verifying AMI copy in DEMO account..."
+          
           # Temporarily use DEMO credentials to verify
           export AWS_ACCESS_KEY_ID=${{ secrets.DEMO_AWS_ACCESS_KEY }}
           export AWS_SECRET_ACCESS_KEY=${{ secrets.DEMO_AWS_SECRET_KEY }}
           
-          echo "Verifying AMI in target account..."
+          # List and verify images in DEMO account
           aws ec2 describe-images --owners self --query 'Images[*].[ImageId,Name,CreationDate]' --output table | head -n 10
 
-  build-gcp-image:
-    name: Build GCP Image
-    needs: build-binary
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      
-      - name: Download Binary Artifact
-        uses: actions/download-artifact@v3
-        with:
-          name: webapp-binary
-          path: ${{ env.BUILD_PATH }}
-      
-      - name: Make Binary Executable
-        run: chmod +x ${{ env.BUILD_PATH }}/${{ env.BINARY_NAME }}
-      
-      - name: Setup Environment
-        uses: ./.github/actions/setup-environment
-        with:
-          install-packer: 'true'
-      
-      - name: Configure GCP Development Credentials
-        id: dev-credentials
-        uses: ./.github/actions/cloud-credentials
-        with:
-          provider: 'gcp'
-          gcp-key: ${{ secrets.DEV_GCP_KEY }}
-          credentials-filename: 'gcp-dev-credentials.json'
-          setup-gcloud-cli: 'true'
-      
-      - name: Configure GCP Target Environment Credentials
-        id: target-credentials
-        run: |
-          # Create credentials file
-          echo '${{ secrets.DEMO_GCP_KEY }}' > gcp-demo-credentials.json
-          cp gcp-demo-credentials.json infra/packer/gcp-demo-credentials.json
-          
-          # Extract and set project ID
-          TARGET_PROJECT_ID=$(echo '${{ secrets.DEMO_GCP_KEY }}' | jq -r '.project_id')
-          echo "GCP_DEMO_PROJECT_ID=${TARGET_PROJECT_ID}" >> $GITHUB_ENV
-      
-      - name: Initialize Packer
-        working-directory: infra/packer
-        run: packer init .
-      
-      - name: Build GCP Image
-        working-directory: infra/packer
-        run: |
-          # Build GCP Image
-          packer build \
-            -only="googlecompute.webapp" \
-            -var "target_account_id=unused-in-gcp-build" \
-            -var "gcp_dev_project=${{ steps.dev-credentials.outputs.gcp-project-id }}" \
-            -var "gcp_target_project=${GCP_DEMO_PROJECT_ID}" \
-            -var "gcp_build_zone=us-east1-b" \
-            -var "gcp_vm_type=e2-medium" \
-            -var "gcp_storage_region=us" \
-            machine-image.pkr.hcl
-      
-      - name: Migrate GCP Image to Target Environment
-        run: |
-          # Make the script executable and run it
-          chmod +x infra/packer/gcp_migration.sh
-          ./infra/packer/gcp_migration.sh us-east1-b
-      
-      - name: Verify GCP Image Migration
-        run: |
-          # Authenticate with DEMO credentials to verify
-          gcloud auth activate-service-account --key-file="gcp-demo-credentials.json"
-          gcloud config set project ${GCP_DEMO_PROJECT_ID}
-          
-          echo "Verifying Images in target GCP project..."
-          gcloud compute images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:copy-webapp-nodejs-mysql" --limit=5
-          gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-webapp-nodejs-mysql" --limit=5
-      
+      # Clean up credentials after build
       - name: Secure Credential Cleanup
         if: always()
         run: |
-          rm -f gcp-dev-credentials.json gcp-demo-credentials.json infra/packer/gcp-demo-credentials.json
-
-  image-build-summary:
-    name: Image Build Summary
-    if: always()
-    needs: [build-binary, build-aws-image, build-gcp-image]
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Generate Status Report
-        run: |
-          echo "# Infrastructure Image Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "Run completed at $(date)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Job Results" >> $GITHUB_STEP_SUMMARY
-          echo "- Binary Build: ${{ needs.build-binary.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- AWS AMI Build: ${{ needs.build-aws-image.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "- GCP Image Build: ${{ needs.build-gcp-image.result }}" >> $GITHUB_STEP_SUMMARY
-          
-          if [[ "${{ needs.build-aws-image.result }}" == "success" && "${{ needs.build-gcp-image.result }}" == "success" ]]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Infrastructure images have been successfully built and distributed to target environments." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Some image builds have failed. Please review the job logs for details." >> $GITHUB_STEP_SUMMARY
-          fi
+          rm -f gcp-dev-credentials.json gcp-demo-credentials.json
