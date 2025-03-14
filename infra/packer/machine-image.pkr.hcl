@@ -21,7 +21,7 @@ variable "aws_build_region" {
 
 variable "aws_base_ami" {
   type        = string
-  default     = "ami-0010edd796fd9c04d" // Ubuntu 24.04 LTS
+  default     = "ami-000341536741f5240" // Ubuntu 24.04 LTS
   description = "Base AMI ID to use for the build"
 }
 
