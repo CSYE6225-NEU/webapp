@@ -27,7 +27,7 @@ jobs:
       - name: Update and Install System Dependencies
         run: sudo apt update && sudo apt upgrade -y
         
-      - name: preparing mysql
+      - name: Preparing Mysql
         run: |
           for i in {30..0}; do
             if mysqladmin ping -h 127.0.0.1 -uroot -p"${{ secrets.MYSQL_ROOT_PASSWORD }}" --silent; then
