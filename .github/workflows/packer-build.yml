@@ -26,7 +26,7 @@ jobs:
       - name: Install pkg Globally
         run: npm install -g pkg
 
-      - name: Build Application with pkg
+      - name: build application executable
         run: |
           set -e  # Stop if any command fails
           
@@ -49,7 +49,7 @@ jobs:
         run: ls -lah infra/packer/dist/
 
       # AWS DEV Configuration
-      - name: Configure AWS DEV Credentials
+      - name: gcp aws credentials config
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.DEV_AWS_ACCESS_KEY }}
@@ -57,7 +57,7 @@ jobs:
           aws-region: us-east-1
 
       # Setup GCP DEV credentials from JSON
-      - name: Setup GCP DEV Credentials
+      - name: gcp dev credentials config
         id: setup-gcp-dev
         run: |
           # Create credentials file
@@ -68,7 +68,7 @@ jobs:
           echo "GCP_PROJECT_ID=$(echo '${{ secrets.DEV_GCP_KEY }}' | jq -r '.project_id')" >> $GITHUB_ENV
 
       # Setup GCP DEMO credentials for sharing
-      - name: Setup GCP DEMO Project Info
+      - name: gcp demo credentials config
         id: setup-gcp-demo
         run: |
           # Create credentials file
@@ -80,14 +80,8 @@ jobs:
           # Set environment variable for use in later steps
           echo "GCP_DEMO_PROJECT_ID=$(echo '${{ secrets.DEMO_GCP_KEY }}' | jq -r '.project_id')" >> $GITHUB_ENV
 
-      # Debug variables
-      - name: Debug Environment Variables
-        run: |
-          echo "GCP_PROJECT_ID: ${GCP_PROJECT_ID}"
-          echo "GCP_DEMO_PROJECT_ID: ${GCP_DEMO_PROJECT_ID}"
-
       # Setup AWS DEMO Account ID for sharing
-      - name: Configure AWS DEMO Account
+      - name: configure aws account
         id: setup-aws-demo
         run: |
           # Temporarily use DEMO credentials to get account ID
@@ -145,18 +139,8 @@ jobs:
             -var "gcp_demo_project_id=${GCP_DEMO_PROJECT_ID}" \
             machine-image.pkr.hcl
 
-      - name: Verify AWS AMI Creation
-        run: |
-          echo "Verifying AWS AMI creation..."
-          aws ec2 describe-images --owners self --query 'Images[].[ImageId,Name,CreationDate]' --output table --filters "Name=name,Values=custom-nodejs-mysql-" | head -n 10
-
-      - name: Verify GCP Machine Image Creation
-        run: |
-          echo "Verifying GCP Machine Image creation..."
-          gcloud compute images list --project=${GCP_PROJECT_ID} --filter="name:custom-nodejs-mysql" --limit=5
-
       # Run the GCP migration script after GCP Machine Image is verified
-      - name: Migrate GCP Machine Image to DEMO Project
+      - name: Copy MachineImage to Demo Account
         run: |
           echo "Running GCP migration script..."
           
@@ -178,7 +162,7 @@ jobs:
           gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-custom-nodejs-mysql" --limit=5
 
       # Run the AMI migration script after AWS AMI is verified
-      - name: Migrate AMI to DEMO Account
+      - name: Copy AMI to Demo Account
         run: |
           echo "Running AMI migration script..."
           
