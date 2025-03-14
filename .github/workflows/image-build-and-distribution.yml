@@ -33,15 +33,37 @@ jobs:
       - name: Debug Build Output
         run: ls -lah infra/packer/dist/
 
-      # Setup cloud credentials
-      - name: Setup Cloud Credentials
-        uses: ./.github/actions/cloud-credentials
+      # AWS DEV Configuration
+      - name: Configure AWS Development Credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key: ${{ secrets.DEV_AWS_ACCESS_KEY }}
-          aws-secret-key: ${{ secrets.DEV_AWS_SECRET_KEY }}
-          aws-region: 'us-east-1'
-          gcp-key: ${{ secrets.DEV_GCP_KEY }}
-          demo-gcp-key: ${{ secrets.DEMO_GCP_KEY }}
+          aws-access-key-id: ${{ secrets.DEV_AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.DEV_AWS_SECRET_KEY }}
+          aws-region: us-east-1
+
+      # Setup GCP DEV credentials from JSON
+      - name: Configure GCP Development Credentials
+        id: setup-gcp-dev
+        run: |
+          # Create credentials file
+          echo '${{ secrets.DEV_GCP_KEY }}' > gcp-dev-credentials.json
+          
+          # Set environment variables for use in later steps
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/gcp-dev-credentials.json" >> $GITHUB_ENV
+          echo "GCP_PROJECT_ID=$(echo '${{ secrets.DEV_GCP_KEY }}' | jq -r '.project_id')" >> $GITHUB_ENV
+
+      # Setup GCP DEMO credentials for sharing
+      - name: Configure GCP Target Environment Credentials
+        id: setup-gcp-demo
+        run: |
+          # Create credentials file
+          echo '${{ secrets.DEMO_GCP_KEY }}' > gcp-demo-credentials.json
+          
+          # Copy for use by migration script
+          cp gcp-demo-credentials.json infra/packer/gcp-demo-credentials.json
+          
+          # Set environment variable for use in later steps
+          echo "GCP_DEMO_PROJECT_ID=$(echo '${{ secrets.DEMO_GCP_KEY }}' | jq -r '.project_id')" >> $GITHUB_ENV
 
       # Setup AWS DEMO Account ID for sharing
       - name: Identify AWS Target Account
@@ -88,7 +110,6 @@ jobs:
         working-directory: infra/packer
         run: packer init .
 
-      # Build multi-cloud infrastructure images
       - name: Build Multi-Cloud Infrastructure Images
         working-directory: infra/packer
         run: |
@@ -118,7 +139,7 @@ jobs:
             -var "gcp_storage_region=us" \
             machine-image.pkr.hcl
 
-      # Run the GCP migration script
+      # Run the GCP migration script after GCP Machine Image is verified
       - name: Migrate GCP Image to Target Environment
         run: |
           echo "Running GCP migration script..."
@@ -140,7 +161,7 @@ jobs:
           gcloud compute images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:copy-webapp-nodejs-mysql" --limit=5
           gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-webapp-nodejs-mysql" --limit=5
 
-      # Run the AMI migration script
+      # Run the AMI migration script after AWS AMI is verified
       - name: Migrate AWS AMI to Target Environment
         run: |
           echo "Running AMI migration script..."
