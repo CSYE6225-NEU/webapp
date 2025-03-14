@@ -14,7 +14,7 @@ packer {
 # Timestamp for unique image identification and traceability
 variable "timestamp" {
   type    = string
-  default = "${formatdate("YYYYMMDD-hhmmss", timestamp())}"
+  default = "${formattime("YYYYMMDD-hhmmss", timestamp())}"
 }
 
 # AWS environment configuration parameters

@@ -1,53 +1,155 @@
-name: Packer Configuration Validator
+packer {
+  required_plugins {
+    amazon-ebs = {
+      source  = "github.com/hashicorp/amazon"
+      version = ">= 1.0.0"
+    }
+    googlecompute = {
+      source  = "github.com/hashicorp/googlecompute"
+      version = ">= 1.0.0"
+    }
+  }
+}
 
-on:
-  pull_request:
-    branches:
-      - main
+# Common variables
+variable "timestamp" {
+  type    = string
+  default = "${formattime("YYYYMMDD-hhmmss", timestamp())}"
+  # Fixed: Changed formatdate to formattime which is the correct function
+}
 
-jobs:
-  validate_infrastructure_code:
-    name: Validate Infrastructure Code
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
-        
-      - name: Setup Node.js Packaging Tool
-        run: npm install -g pkg
-        
-      - name: Package Application for Deployment
-        run: |
-          # Install application dependencies
-          npm install
-          
-          # Package application as standalone binary
-          pkg server.js --output infra/packer/dist/webapp --targets node18-linux-x64
-          
-          # Configure executable permissions
-          chmod +x infra/packer/dist/webapp
-          echo "Application packaging completed successfully"
-          
-      - name: Install HashiCorp Packer
-        uses: hashicorp/setup-packer@v2
-        with:
-          version: latest
-          
-      - name: Initialize Packer Plugins
-        working-directory: infra/packer
-        run: packer init .
-        
-      - name: Verify Configuration Format
-        working-directory: infra/packer
-        run: |
-          if packer fmt -check -diff .; then
-            echo "Configuration format verification passed"
-          else
-            echo "Configuration format verification failed - please run 'packer fmt' locally"
-            exit 1
-          fi
-          
-      - name: Verify Configuration Syntax
-        working-directory: infra/packer
-        run: packer validate machine-image.pkr.hcl
+# AWS variables
+variable "aws_region" {
+  type    = string
+  default = "us-east-1"
+}
+
+variable "aws_source_ami" {
+  type    = string
+  default = "ami-0812f893ed55215a7" # Ubuntu 24.04 LTS
+}
+
+variable "instance_type" {
+  type    = string
+  default = "t2.micro"
+}
+
+variable "demo_account_id" {
+  type        = string
+  default     = ""
+  description = "AWS account ID to share the AMI with"
+}
+
+# GCP variables
+variable "gcp_project_id" {
+  type        = string
+  default     = ""
+  description = "GCP DEV project ID"
+}
+
+variable "gcp_demo_project_id" {
+  type        = string
+  default     = ""
+  description = "GCP DEMO project ID to share the image with"
+}
+
+variable "gcp_source_image" {
+  type    = string
+  default = "ubuntu-2404-noble-amd64-v20250214"
+}
+
+variable "gcp_zone" {
+  type    = string
+  default = "us-east1-b"
+}
+
+variable "gcp_machine_type" {
+  type    = string
+  default = "e2-medium"
+}
+
+variable "gcp_storage_location" {
+  type    = string
+  default = "us"
+}
+
+locals {
+  image_name = "custom-nodejs-mysql-${var.timestamp}"
+}
+
+# AWS AMI Build
+source "amazon-ebs" "ubuntu" {
+  region                   = var.aws_region
+  source_ami               = var.aws_source_ami
+  instance_type            = var.instance_type
+  ssh_username             = "ubuntu"
+  ami_name                 = local.image_name
+  ami_description          = "Custom image with Node.js binary and MySQL"
+  associate_public_ip_address = true
+  ssh_timeout              = "10m"
+  
+  # Share AMI with the DEMO account only if provided
+  ami_users                = var.demo_account_id != "" ? [var.demo_account_id] : []
+  
+  tags = {
+    Name        = local.image_name
+    Environment = "dev"
+    BuildDate   = var.timestamp
+    Managed     = "Packer"
+  }
+}
+
+# GCP Image Build
+source "googlecompute" "ubuntu" {
+  project_id         = var.gcp_project_id
+  source_image       = var.gcp_source_image
+  machine_type       = var.gcp_machine_type
+  zone               = var.gcp_zone
+  image_name         = local.image_name
+  image_family       = "custom-images"
+  image_description  = "Custom GCP image with Node.js and MySQL"
+  ssh_username       = "ubuntu"
+  wait_to_add_ssh_keys = "10s"
+  
+  labels = {
+    environment = "dev"
+    build_date  = var.timestamp
+    managed     = "packer"
+  }
+}
+
+build {
+  name = "webapp-image"
+  
+  sources = [
+    "source.amazon-ebs.ubuntu",
+    "source.googlecompute.ubuntu"
+  ]
+
+  provisioner "file" {
+    source      = "dist/webapp"
+    destination = "/tmp/webapp"
+  }
+
+  provisioner "file" {
+    source      = "setup.sh"
+    destination = "/tmp/setup.sh"
+  }
+  
+  provisioner "file" {
+    source      = "webapp.service"
+    destination = "/tmp/webapp.service"
+  }
+
+  provisioner "shell" {
+    inline = [
+      "chmod +x /tmp/setup.sh",
+      "sudo /tmp/setup.sh"
+    ]
+  }
+
+  post-processor "manifest" {
+    output     = "manifest.json"
+    strip_path = true
+  }
+}
