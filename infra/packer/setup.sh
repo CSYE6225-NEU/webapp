@@ -1,54 +1,52 @@
 #!/bin/bash
+# WebApp Deployment and Configuration Script
+#
+# This script performs a comprehensive setup of a Node.js web application with MySQL:
+# - Creates dedicated system account with appropriate security restrictions
+# - Installs and hardens MySQL database server
+# - Configures application environment and permissions
+# - Establishes systemd service for application management
 
-# Purpose: Setup script for webapp deployment with MySQL database
-# This script creates a system user, installs MySQL, configures the application,
-# and sets up a systemd service to run the webapp
-
-# Define MySQL root password
+# Database authentication credentials
 MYSQL_ROOT_PASSWORD="Dark0vader#Mysql"
 
-# Create a non-login system user for running the application
-# Using a dedicated user with no login shell improves security
-echo "Creating non-login user csye6225..."
+# Phase 1: System Account Configuration
+echo "Configuring application service account..."
 sudo groupadd -f csye6225
 sudo useradd -r -M -g csye6225 -s /usr/sbin/nologin csye6225
 
-# Update package lists and install MySQL server
-echo "Updating system and installing dependencies..."
+# Phase 2: System Dependencies
+echo "Updating package repositories and installing dependencies..."
 sudo apt-get update -y
 sudo apt-get install -y mysql-server
 
-# Configure MySQL to start on boot and start it now
-echo "Setting up MySQL..."
+# Phase 3: Database Configuration
+echo "Initializing MySQL database service..."
 sudo systemctl enable mysql
 sudo systemctl start mysql
 
-# Function to secure the MySQL installation
-# - Sets root password
-# - Removes anonymous users
-# - Removes test database
+# MySQL security hardening function
 secure_mysql() {
-  echo "Securing MySQL installation..."
+  echo "Applying database security hardening measures..."
   sudo mysql <<EOF
-  ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '$MYSQL_ROOT_PASSWORD';
-  DELETE FROM mysql.user WHERE User='';
-  DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
-  FLUSH PRIVILEGES;
+ ALTER USER 'root'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY '$MYSQL_ROOT_PASSWORD';
+ DELETE FROM mysql.user WHERE User='';
+ DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
+ FLUSH PRIVILEGES;
 EOF
 }
 
-# Call the secure_mysql function
+# Execute database security configuration
 secure_mysql
 
-# Create application directory and move the webapp binary into place
-echo "Creating application directory..."
+# Phase 4: Application Deployment
+echo "Preparing application runtime environment..."
 sudo mkdir -p /opt/myapp
 sudo mv /tmp/webapp /opt/myapp/webapp
 sudo chmod +x /opt/myapp/webapp
 
-# Create environment file with database connection details
-# This keeps sensitive information out of the application code
-echo "Creating .env file..."
+# Create application configuration with database connection parameters
+echo "Generating application configuration..."
 cat <<EOF | sudo tee /opt/myapp/.env > /dev/null
 DB_HOST=localhost
 DB_PORT=3306
@@ -58,25 +56,23 @@ DB_NAME=health_check
 PORT=8080
 EOF
 
-# Secure the environment file to prevent unauthorized access
+# Secure configuration file with restricted permissions
 sudo chmod 600 /opt/myapp/.env
 
-# Set proper ownership and permissions for application files
-# This ensures the application can be executed by the csye6225 user
-echo "Setting ownership of application files..."
+# Set appropriate ownership and access permissions
+echo "Configuring application file permissions..."
 sudo chown -R csye6225:csye6225 /opt/myapp
 sudo chmod -R 750 /opt/myapp
 
-# Set up systemd service for the application
-# This allows the app to run as a service and start on boot
-echo "Setting up systemd service..."
+# Phase 5: Service Configuration
+echo "Establishing application service..."
 sudo mv /tmp/webapp.service /etc/systemd/system/webapp.service
 sudo chmod 644 /etc/systemd/system/webapp.service
 
-# Reload systemd, enable and start the webapp service
-echo "Reloading systemd and enabling service..."
+# Initialize service management
+echo "Activating application service..."
 sudo systemctl daemon-reload
 sudo systemctl enable webapp
 sudo systemctl start webapp
 
-echo "Setup complete!"
+echo "Deployment completed successfully. Application is now running."

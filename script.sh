@@ -1,66 +1,68 @@
 #!/bin/bash
+# Web Application Deployment Script
+#
+# This script automates the setup and deployment of a web application with MySQL:
+# - Prepares system environment and dependencies
+# - Configures MySQL database and service
+# - Establishes security context (user/group)
+# - Deploys application files with proper permissions
 
-# The name of the database to be created and used by the application
-DATABASE_NAME="local"
-# The Linux group for managing application resources and permissions
-GROUP_NAME="csye6225"
-# The user that will run the application and belong to the application group
-USER_NAME="csye6225"
-# Path to the application archive on the local machine
-APP_ZIP="./webapp.zip"
-# Directory on the local server where the application will be deployed
-APP_DIRECTORY="/opt/csye6225"
+# Application configuration parameters
+DATABASE_NAME="local"         # Database instance name for application data
+GROUP_NAME="csye6225"         # System security group
+USER_NAME="csye6225"          # Application service account
+APP_ZIP="./webapp.zip"        # Source application package
+APP_DIRECTORY="/opt/csye6225" # Target deployment location
 
-# Function to check if 'unzip' is installed and install it if necessary
+# Utility function for dependency validation
 validate_unzip_package() {
-    if ! command -v unzip &> /dev/null; then
-        echo "Installing unzip package..."
-        sudo apt update -y
-        sudo apt install unzip -y
-    else
-        echo "Unzip package already installed"
-    fi
+  if ! command -v unzip &> /dev/null; then
+    echo "Installing required dependency: unzip"
+    sudo apt update -y
+    sudo apt install unzip -y
+  else
+    echo "Dependency validation successful: unzip is available"
+  fi
 }
 
-# Update and upgrade packages to ensure the system is up-to-date
-echo "Starting system update..."
+# Phase 1: System Preparation
+echo "Initiating system environment preparation..."
 sudo apt update && sudo apt upgrade -y
 
-# Check if 'unzip' is installed and install it if needed
-echo "Validating unzip installation..."
+echo "Validating system dependencies..."
 validate_unzip_package
 
-# Install MySQL server
-echo "Beginning MySQL installation..."
+# Phase 2: Database Setup
+echo "Installing MySQL database server..."
 sudo apt install mysql-server -y
 
-# Start and enable the MySQL service to run on boot
-echo "Configuring MySQL service..."
+echo "Configuring database service persistence..."
 sudo systemctl enable --now mysql
 
-# Create the specified database
-echo "Initializing database: $DATABASE_NAME..."
+echo "Creating application database: $DATABASE_NAME"
 sudo mysql -e "CREATE DATABASE IF NOT EXISTS $DATABASE_NAME;"
 
-# Create a Linux group for managing application permissions
-echo "Setting up group: $GROUP_NAME..."
+# Phase 3: Security Context Configuration
+echo "Establishing application security group: $GROUP_NAME"
 sudo groupadd -f $GROUP_NAME
 
-# Create a user for the application and add it to the application group
-echo "Creating system user: $USER_NAME..."
-sudo useradd -m -g $GROUP_NAME -s /bin/bash $USER_NAME || echo "User $USER_NAME exists"
+echo "Configuring application service account: $USER_NAME"
+sudo useradd -m -g $GROUP_NAME -s /bin/bash $USER_NAME || echo "Service account already exists, using existing account"
 
-# Copy the application archive to the local server's directory
-echo "Preparing application files..."
+# Phase 4: Application Deployment
+echo "Preparing deployment workspace..."
 sudo mkdir -p /tmp/app && sudo chmod 755 /tmp/app
 cp "$APP_ZIP" /tmp/app/webapp.zip
 
-# Set up the application
-echo "Deploying application..."
+echo "Deploying application artifacts to $APP_DIRECTORY..."
 sudo mkdir -p $APP_DIRECTORY
 sudo unzip -o /tmp/app/webapp.zip -d $APP_DIRECTORY
+
+echo "Configuring application file ownership and permissions..."
 sudo chown -R $USER_NAME:$GROUP_NAME $APP_DIRECTORY
 sudo chmod -R 750 $APP_DIRECTORY
 
-# Indicate that the setup process has completed successfully
-echo "Deployment completed successfully!"
+echo "Deployment completed successfully."
+echo "Application location: $APP_DIRECTORY"
+echo "Database: $DATABASE_NAME"
+echo "Service account: $USER_NAME"
