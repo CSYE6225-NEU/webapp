@@ -13,25 +13,25 @@ packer {
 
 # AWS Configuration Variables
 # ===========================================================
-variable "aws_region" {
+variable "aws_build_region" {
   type        = string
   default     = "us-east-1"
   description = "AWS region for building the AMI"
 }
 
-variable "aws_source_ami" {
+variable "aws_base_ami" {
   type        = string
   default     = "ami-0812f893ed55215a7" // Ubuntu 24.04 LTS
   description = "Base AMI ID to use for the build"
 }
 
-variable "instance_type" {
+variable "aws_vm_size" {
   type        = string
   default     = "t2.micro"
   description = "EC2 instance type to use for the build"
 }
 
-variable "demo_account_id" {
+variable "target_account_id" {
   type        = string
   default     = "980921746832"
   description = "AWS account ID to share the AMI with"
@@ -39,37 +39,37 @@ variable "demo_account_id" {
 
 # GCP Configuration Variables
 # ===========================================================
-variable "gcp_project_id" {
+variable "gcp_dev_project" {
   type        = string
   default     = "dev-project-452101"
   description = "GCP DEV project ID"
 }
 
-variable "gcp_demo_project_id" {
+variable "gcp_target_project" {
   type        = string
   default     = ""
   description = "GCP DEMO project ID to share the image with"
 }
 
-variable "gcp_source_image" {
+variable "gcp_base_image" {
   type        = string
   default     = "ubuntu-2404-noble-amd64-v20250214"
   description = "Base GCP image to use for the build"
 }
 
-variable "gcp_zone" {
+variable "gcp_build_zone" {
   type        = string
   default     = "us-east1-b"
   description = "GCP zone for building the image"
 }
 
-variable "gcp_machine_type" {
+variable "gcp_vm_type" {
   type        = string
   default     = "e2-medium"
   description = "GCP machine type to use for the build"
 }
 
-variable "gcp_storage_location" {
+variable "gcp_storage_region" {
   type        = string
   default     = "us"
   description = "GCP storage location for the machine image"
@@ -78,9 +78,9 @@ variable "gcp_storage_location" {
 # AWS AMI Build Configuration
 # ===========================================================
 source "amazon-ebs" "ubuntu" {
-  region                      = var.aws_region
-  source_ami                  = var.aws_source_ami
-  instance_type               = var.instance_type
+  region                      = var.aws_build_region
+  source_ami                  = var.aws_base_ami
+  instance_type               = var.aws_vm_size
   ssh_username                = "ubuntu"
   ami_name                    = "custom-nodejs-mysql-{{timestamp}}"
   ami_description             = "Custom image with Node.js binary and MySQL"
@@ -88,16 +88,16 @@ source "amazon-ebs" "ubuntu" {
   ssh_timeout                 = "10m"
 
   # Share AMI with the DEMO account
-  ami_users = [var.demo_account_id]
+  ami_users = [var.target_account_id]
 }
 
 # GCP Image Build Configuration
 # ===========================================================
 source "googlecompute" "ubuntu" {
-  project_id           = var.gcp_project_id
-  source_image         = var.gcp_source_image
-  machine_type         = var.gcp_machine_type
-  zone                 = var.gcp_zone
+  project_id           = var.gcp_dev_project
+  source_image         = var.gcp_base_image
+  machine_type         = var.gcp_vm_type
+  zone                 = var.gcp_build_zone
   image_name           = "custom-nodejs-mysql-{{timestamp}}"
   image_family         = "custom-images"
   image_description    = "Custom GCP image with Node.js and MySQL"

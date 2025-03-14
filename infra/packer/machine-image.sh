@@ -4,13 +4,13 @@
 # It does this by creating a temporary VM, then creating a machine image from that VM.
 
 # Configuration Variables
-PROJECT_ID="dev-project-451923"                         # The GCP project ID
-ZONE="us-east1-b"                                       # The GCP zone where resources will be created
-MACHINE_TYPE="e2-medium"                                # The VM type for the temporary instance
+PROJECT_ID="dev-project-451923"                         # The GCP project ID (matches gcp_dev_project)
+ZONE="us-east1-b"                                       # The GCP zone where resources will be created (matches gcp_build_zone)
+MACHINE_TYPE="e2-medium"                                # The VM type for the temporary instance (matches gcp_vm_type)
 STORAGE_IMAGE_NAME="custom-nodejs-mysql-1740455384"     # The source image to use
 TEMP_INSTANCE_NAME="custom-nodejs-temp-vm"              # Name for temporary VM
 MACHINE_IMAGE_NAME="custom-nodejs-mysql-machine-image"  # Name for the output machine image
-STORAGE_LOCATION="us"                                   # The storage location for the machine image
+STORAGE_LOCATION="us"                                   # The storage location for the machine image (matches gcp_storage_region)
 
 # Step 1: Create a temporary VM instance from the source storage image
 echo "Step 1: Creating a temporary VM from the storage image..."

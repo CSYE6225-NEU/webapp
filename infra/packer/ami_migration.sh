@@ -11,7 +11,7 @@ SOURCE_AWS_SECRET_KEY="${DEV_AWS_SECRET_ACCESS_KEY}"
 TARGET_AWS_ACCESS_KEY="${DEMO_AWS_ACCESS_KEY_ID}"
 TARGET_AWS_SECRET_KEY="${DEMO_AWS_SECRET_ACCESS_KEY}"
 
-# AWS region and AMI naming
+# AWS region and AMI naming - matches aws_build_region
 AWS_REGION="us-east-1"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 NEW_AMI_NAME="Copied-custom-nodejs-mysql-${TIMESTAMP}"
@@ -47,7 +47,7 @@ get_account_ids() {
     --profile target-account \
     --query 'Account' \
     --output text)
-  echo "Target Account ID: $TARGET_ACCOUNT_ID"
+  echo "Target Account ID: $TARGET_ACCOUNT_ID"  # This is the target_account_id
 }
 
 find_latest_ami() {

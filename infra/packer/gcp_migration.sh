@@ -3,7 +3,7 @@
 # Configuration
 # ====================================================
 # Default zone value - can be overridden with command line parameter
-DEFAULT_ZONE="us-east1-b"
+DEFAULT_ZONE="us-east1-b"  # Matches gcp_build_zone
 ZONE=${1:-$DEFAULT_ZONE}
 
 # Paths to GCP Service Account JSON Keys using GitHub Actions secrets
@@ -11,8 +11,8 @@ DEV_GCP_KEY="gcp-dev-credentials.json"
 DEMO_GCP_KEY="gcp-demo-credentials.json"
 
 # Compute Instance and Image Details
-MACHINE_TYPE="e2-medium"
-STORAGE_LOCATION="us"
+MACHINE_TYPE="e2-medium"  # Matches gcp_vm_type
+STORAGE_LOCATION="us"     # Matches gcp_storage_region
 TIMESTAMP=$(date +%s)
 IMAGE_PREFIX="custom-nodejs-mysql"
 
@@ -26,8 +26,8 @@ extract_project_info() {
   log_info "Extracting project information"
   
   # Extract project IDs from credential files
-  DEV_PROJECT_ID=$(jq -r '.project_id' "$DEV_GCP_KEY")
-  DEMO_PROJECT_ID=$(jq -r '.project_id' "$DEMO_GCP_KEY")
+  DEV_PROJECT_ID=$(jq -r '.project_id' "$DEV_GCP_KEY")    # Maps to gcp_dev_project
+  DEMO_PROJECT_ID=$(jq -r '.project_id' "$DEMO_GCP_KEY")  # Maps to gcp_target_project
 
   # Extract service account emails
   DEV_SERVICE_ACCOUNT=$(jq -r '.client_email' "$DEV_GCP_KEY")
