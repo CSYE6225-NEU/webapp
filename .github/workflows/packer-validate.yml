@@ -1,53 +1,42 @@
-name: Packer Configuration Validator
-
+name: Validate Packer Script
 on:
   pull_request:
     branches:
       - main
-
 jobs:
-  validate_infrastructure_code:
-    name: Validate Infrastructure Code
+  validate_packer:
+    name: Validate Packer Script
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
-        
-      - name: Setup Node.js Packaging Tool
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      - name: Install pkg globally
         run: npm install -g pkg
-        
-      - name: Package Application for Deployment
+      - name: Build Application with pkg
         run: |
-          # Install application dependencies
+          # Ensure dependencies are installed
           npm install
-          
-          # Package application as standalone binary
+          # Use `pkg` to create a binary executable
           pkg server.js --output infra/packer/dist/webapp --targets node18-linux-x64
-          
-          # Configure executable permissions
+          # Ensure the binary has execute permissions
           chmod +x infra/packer/dist/webapp
-          echo "Application packaging completed successfully"
-          
-      - name: Install HashiCorp Packer
+          echo "Build complete! Binary located at infra/packer/dist/webapp"
+      - name: Install Packer
         uses: hashicorp/setup-packer@v2
         with:
           version: latest
-          
-      - name: Initialize Packer Plugins
+      - name: Initialize Packer
         working-directory: infra/packer
         run: packer init .
-        
-      - name: Verify Configuration Format
+      - name: Check Packer Formatting
         working-directory: infra/packer
         run: |
           if packer fmt -check -diff .; then
-            echo "Configuration format verification passed"
+            echo "Packer format is correct."
           else
-            echo "Configuration format verification failed - please run 'packer fmt' locally"
+            echo "Packer format check failed. Run 'packer fmt' locally to fix formatting."
             exit 1
           fi
-          
-      - name: Verify Configuration Syntax
+      - name: Validate Packer Configuration
         working-directory: infra/packer
         run: packer validate machine-image.pkr.hcl
