@@ -1,0 +1,129 @@
+name: WebApp CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  run-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.DB_NAME }}
+        ports:
+          - 3306:3306
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Update and Install System Dependencies
+        run: sudo apt update && sudo apt upgrade -y
+        
+      - name: preparing mysql
+        run: |
+          for i in {30..0}; do
+            if mysqladmin ping -h 127.0.0.1 -uroot -p"${{ secrets.MYSQL_ROOT_PASSWORD }}" --silent; then
+              echo "MySQL is up and running"
+              break
+            fi
+            echo "Waiting for MySQL..."
+            sleep 2
+          done
+          if [ "$i" = 0 ]; then
+            echo "ERROR: MySQL failed to start"
+            exit 1
+          fi
+          
+      - name: create environment file
+        run: |
+          cat <<EOF > .env
+          DB_HOST=${{ secrets.DB_HOST }}
+          DB_PORT=${{ secrets.DB_PORT }}
+          DB_USER=${{ secrets.DB_USER }}
+          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          DB_NAME=${{ secrets.DB_NAME }}
+          PORT=${{ secrets.PORT }}
+          EOF
+          
+      - name: setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install Project Dependencies
+        run: npm install
+        
+      - name: Run Tests
+        run: npm test
+
+  validate_packer:
+    name: Validate Packer Script
+    runs-on: ubuntu-latest
+    needs: run-tests
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install Dependencies
+        run: npm ci
+        
+      - name: Install pkg 
+        run: npm install -g pkg
+        
+      - name: generate executable
+        run: |
+          # Create the output directory if it doesn't exist
+          mkdir -p infra/packer/dist
+          
+          # Build the binary
+          pkg server.js --output infra/packer/dist/webapp --targets node18-linux-x64
+          
+          # Make it executable
+          chmod +x infra/packer/dist/webapp
+          
+          # Verify the binary was created
+          if [ -f infra/packer/dist/webapp ]; then
+            echo "Build complete! Binary located at infra/packer/dist/webapp"
+          else
+            echo "Build failed! Binary not found"
+            exit 1
+          fi
+      
+      - name: Install Packer
+        uses: hashicorp/setup-packer@v2
+        with:
+          version: latest
+      
+      - name: Initialize Packer
+        working-directory: infra/packer
+        run: packer init .
+      
+      - name: Check Packer Formatting
+        working-directory: infra/packer
+        run: |
+          if packer fmt -check -diff .; then
+            echo "Packer format is correct."
+          else
+            echo "Packer format check failed. Run 'packer fmt' locally to fix formatting."
+            exit 1
+          fi
+      
+      - name: Validate Packer Configuration
+        working-directory: infra/packer
+        run: packer validate machine-image.pkr.hcl
