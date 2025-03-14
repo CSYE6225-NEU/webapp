@@ -259,7 +259,14 @@ Verifies application health by validating database connectivity.
 │       ├── setup.sh      # VM setup script
 │       ├── ami_migration.sh  # AWS AMI sharing script
 │       └── gcp_migration.sh  # GCP image sharing script
-├── .github/workflows/    # GitHub Actions workflows
+├── .github/              # GitHub configuration
+│   ├── actions/          # Custom GitHub Actions
+│   │   ├── build-binary/ # Binary build action
+│   │   ├── cloud-credentials/ # Cloud credential setup action
+│   │   └── setup-environment/ # Environment setup action
+│   └── workflows/        # GitHub Actions workflows
+│       ├── webapp-ci-pipeline.yml    # PR validation workflow
+│       └── image-build-and-distribution.yml  # Image build workflow
 ├── app.js                # Express application setup
 ├── server.js             # Application entry point
 ├── package.json          # Project dependencies
@@ -333,54 +340,77 @@ The project includes unit tests located in the `tests` directory. These tests en
 
 ### GitHub Actions Workflows
 
-The project includes three main GitHub Actions workflows:
+The project includes two main GitHub Actions workflows with reusable components:
 
-#### 1. webapp-unit-test.yml
+#### 1. webapp-ci-pipeline.yml
 
-Runs unit tests for the application:
-- Triggered on: push to `main`, pull requests to `main`
-- Sets up MySQL service container
-- Installs dependencies
-- Runs test suite
+Validates the application code and Packer configuration:
+- **Trigger**: Pull requests to `main`
+- **Jobs**:
+  - **run-tests**: Executes unit tests with MySQL integration
+  - **validate_packer**: Builds application binary and validates Packer templates
+- **Uses Custom Actions**:
+  - `setup-environment`: Sets up Node.js and installs dependencies
+  - `build-binary`: Creates the application executable
 
-#### 2. pr-check.yml
+#### 2. image-build-and-distribution.yml
 
-Validates Packer configuration files and runs tests:
-- Triggered on: push to `main`, pull requests to `main`
-- Installs Node.js and dependencies
-- Runs test suite
-- Builds application binary
-- Installs Packer
-- Formats and validates Packer templates
+Builds and distributes cloud machine images:
+- **Trigger**: Push to `main`
+- **Jobs**:
+  - **infrastructure_image_pipeline**: Builds and distributes cloud images
+- **Key Steps**:
+  1. Set up development environment
+  2. Build application binary
+  3. Configure cloud credentials for AWS and GCP
+  4. Build cloud machine images using Packer
+  5. Migrate images to target environments
+  6. Verify successful image creation
+  7. Clean up credentials
 
-#### 3. Build and Migrate Infrastructure Images (packer-build.yml)
+### Reusable Components
 
-Builds and deploys machine images across cloud platforms:
-- Triggered on: pull requests to `main`
-- Job: `infrastructure_image_pipeline`
-- Steps:
-  1. Checkout Repository
-  2. Set up Node.js and install dependencies
-  3. Create Node.js Application Binary
-  4. Configure AWS and GCP credentials
-  5. Set up Cloud SDK and authentication
-  6. Install and initialize Packer
-  7. Build Multi-Cloud Infrastructure Images
-  8. Migrate GCP Image to Target Environment
-  9. Migrate AWS AMI to Target Environment
-  10. Secure Credential Cleanup
+The CI/CD pipeline uses custom GitHub Actions for reusable functionality:
+
+#### setup-environment
+
+Sets up the development environment with proper tools and dependencies:
+- Installs Node.js with specified version
+- Configures npm cache
+- Installs project dependencies
+- Optionally installs pkg and Packer
+
+#### build-binary
+
+Creates the standalone application binary:
+- Creates output directory
+- Builds the binary using pkg
+- Makes the binary executable
+- Verifies successful build
+
+#### cloud-credentials (not currently used)
+
+Configures cloud provider credentials:
+- Sets up AWS authentication
+- Creates GCP service account key files
+- Configures Google Cloud SDK
 
 ### Workflow Architecture
 
 ```
-┌────────────────┐     ┌────────────────┐     ┌────────────────┐
-│  Pull Request  │────▶│    Run Tests   │────▶│ Validate Packer│
-└────────────────┘     └────────────────┘     └────────────────┘
-                                                       │
-                                                       ▼
-┌────────────────┐     ┌────────────────┐     ┌────────────────┐
-│ Migrate Images │◀────│  Build Images  │◀────│   Build App    │
-└────────────────┘     └────────────────┘     └────────────────┘
+┌────────────────┐                          
+│  Pull Request  │──┐                      
+└────────────────┘  │                        
+                    │  ┌────────────────┐   ┌────────────────┐
+                    └─▶│  webapp-ci-    │──▶│ Validate Tests │
+                       │   pipeline     │   │  and Packer    │
+┌────────────────┐     └────────────────┘   └────────────────┘
+│  Push to main  │──┐                                         
+└────────────────┘  │                                         
+                    │  ┌────────────────┐   ┌────────────────┐
+                    └─▶│ image-build-   │──▶│ Build & Deploy │
+                       │ distribution   │   │ Cloud Images   │
+                       └────────────────┘   └────────────────┘
 ```
 
 ## Deployment
@@ -650,7 +680,17 @@ The application logs are output to stdout/stderr and can be collected by service
      - `gcp_vm_type`
      - `gcp_storage_region`
 
-3. **Other Issues**:
+3. **GitHub Actions Workflow Issues**:
+   - Check if the workflow is triggered correctly
+   - Verify the workflow steps execute in the expected order
+   - Examine any errors in composite actions
+
+4. **Composite Action Problems**:
+   - Ensure all necessary actions (setup-environment, build-binary) exist in the correct locations
+   - Check for proper permissions in the action files
+   - Verify the workflow is properly referencing the actions
+
+5. **Other Issues**:
    - Check GitHub Actions secrets are properly set
    - Verify IAM permissions for AWS and GCP service accounts
    - Review Packer logs in GitHub Actions output
@@ -706,7 +746,9 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/) specifica
 - `test`: Adding or updating tests
 - `chore`: Build process or auxiliary tool changes
 
+## License
 
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgements
 
