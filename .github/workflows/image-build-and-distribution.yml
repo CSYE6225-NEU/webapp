@@ -1,7 +1,7 @@
 name: Build and Migrate Infrastructure Images
 
 on:
-  push:
+  pull_request:
     branches:
       - main
 
