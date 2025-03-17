@@ -28,7 +28,7 @@ A production-ready NodeJS application with MySQL integration that provides a hea
 
 ## Overview
 
-This project implements a Node.js web application with health monitoring capabilities that integrates with MySQL for data persistence. It features a robust CI/CD pipeline using GitHub Actions for automated testing, building, and deployment to both AWS and GCP cloud environments. The application is packaged as a standalone binary and deployed as custom machine images (AMIs in AWS and Compute Engine images in GCP).
+This project implements a Node.js web application with health monitoring capabilities that integrates with MySQL for data persistence. It features a robust CI/CD pipeline using GitHub Actions for automated testing, building, and deployment to both AWS and GCP cloud environments. The application is packaged as a standalone binary and deployed as custom webapp machine images (AMIs in AWS and Compute Engine images in GCP).
 
 ### Use Case
 
@@ -259,7 +259,14 @@ Verifies application health by validating database connectivity.
 │       ├── setup.sh      # VM setup script
 │       ├── ami_migration.sh  # AWS AMI sharing script
 │       └── gcp_migration.sh  # GCP image sharing script
-├── .github/workflows/    # GitHub Actions workflows
+├── .github/              # GitHub configuration
+│   ├── actions/          # Custom GitHub Actions
+│   │   ├── build-binary/ # Binary build action
+│   │   ├── cloud-credentials/ # Cloud credential setup action
+│   │   └── setup-environment/ # Environment setup action
+│   └── workflows/        # GitHub Actions workflows
+│       ├── webapp-ci-pipeline.yml    # PR validation workflow
+│       └── image-build-and-distribution.yml  # Image build workflow
 ├── app.js                # Express application setup
 ├── server.js             # Application entry point
 ├── package.json          # Project dependencies
@@ -333,48 +340,77 @@ The project includes unit tests located in the `tests` directory. These tests en
 
 ### GitHub Actions Workflows
 
-The project includes three main GitHub Actions workflows:
+The project includes two main GitHub Actions workflows with reusable components:
 
-#### 1. webapp-unit-test.yml
+#### 1. webapp-ci-pipeline.yml
 
-Runs unit tests for the application:
-- Triggered on: push to `main`, pull requests to `main`
-- Sets up MySQL service container
-- Installs dependencies
-- Runs test suite
+Validates the application code and Packer configuration:
+- **Trigger**: Pull requests to `main`
+- **Jobs**:
+  - **run-tests**: Executes unit tests with MySQL integration
+  - **validate_packer**: Builds application binary and validates Packer templates
+- **Uses Custom Actions**:
+  - `setup-environment`: Sets up Node.js and installs dependencies
+  - `build-binary`: Creates the application executable
 
-#### 2. packer-validate.yml
+#### 2. image-build-and-distribution.yml
 
-Validates Packer configuration files:
-- Triggered on: push to `main`, pull requests to `main`
-- Installs Packer
-- Formats and validates Packer templates
+Builds and distributes cloud machine images:
+- **Trigger**: Push to `main`
+- **Jobs**:
+  - **infrastructure_image_pipeline**: Builds and distributes cloud images
+- **Key Steps**:
+  1. Set up development environment
+  2. Build application binary
+  3. Configure cloud credentials for AWS and GCP
+  4. Build cloud machine images using Packer
+  5. Migrate images to target environments
+  6. Verify successful image creation
+  7. Clean up credentials
 
-#### 3. packer-build.yml
+### Reusable Components
 
-Builds and deploys machine images:
-- Triggered on: pull requests to `main` with changes in `infra/packer/` or workflow file
-- Steps:
-  1. Runs unit tests
-  2. Validates Packer configuration
-  3. Builds application binary
-  4. Configures AWS and GCP credentials
-  5. Builds AWS AMI and GCP Compute Image
-  6. Shares AMI with DEMO AWS account
-  7. Creates Machine Image from GCP Compute Image
-  8. Shares Machine Image with DEMO GCP project
+The CI/CD pipeline uses custom GitHub Actions for reusable functionality:
+
+#### setup-environment
+
+Sets up the development environment with proper tools and dependencies:
+- Installs Node.js with specified version
+- Configures npm cache
+- Installs project dependencies
+- Optionally installs pkg and Packer
+
+#### build-binary
+
+Creates the standalone application binary:
+- Creates output directory
+- Builds the binary using pkg
+- Makes the binary executable
+- Verifies successful build
+
+#### cloud-credentials (not currently used)
+
+Configures cloud provider credentials:
+- Sets up AWS authentication
+- Creates GCP service account key files
+- Configures Google Cloud SDK
 
 ### Workflow Architecture
 
 ```
-┌────────────────┐     ┌────────────────┐     ┌────────────────┐
-│  Pull Request  │────▶│    Run Tests   │────▶│ Validate Packer│
-└────────────────┘     └────────────────┘     └────────────────┘
-                                                       │
-                                                       ▼
-┌────────────────┐     ┌────────────────┐     ┌────────────────┐
-│ Share to DEMO  │◀────│  Build Images  │◀────│   Build App    │
-└────────────────┘     └────────────────┘     └────────────────┘
+┌────────────────┐                          
+│  Pull Request  │──┐                      
+└────────────────┘  │                        
+                    │  ┌────────────────┐   ┌────────────────┐
+                    └─▶│  webapp-ci-    │──▶│ Validate Tests │
+                       │   pipeline     │   │  and Packer    │
+┌────────────────┐     └────────────────┘   └────────────────┘
+│  Push to main  │──┐                                         
+└────────────────┘  │                                         
+                    │  ┌────────────────┐   ┌────────────────┐
+                    └─▶│ image-build-   │──▶│ Build & Deploy │
+                       │ distribution   │   │ Cloud Images   │
+                       └────────────────┘   └────────────────┘
 ```
 
 ## Deployment
@@ -383,13 +419,43 @@ Builds and deploys machine images:
 
 The application is packaged as an Amazon Machine Image (AMI) using Packer and can be deployed as EC2 instances.
 
+#### Packer Configuration for AWS
+
+The Packer configuration in `machine-image.pkr.hcl` uses the following variables for AWS:
+
+```hcl
+variable "aws_build_region" {
+  type        = string
+  default     = "us-east-1"
+  description = "AWS region for building the AMI"
+}
+
+variable "aws_base_ami" {
+  type        = string
+  default     = "ami-0812f893ed55215a7" // Ubuntu 24.04 LTS
+  description = "Base AMI ID to use for the build"
+}
+
+variable "aws_vm_size" {
+  type        = string
+  default     = "t2.micro"
+  description = "EC2 instance type to use for the build"
+}
+
+variable "target_account_id" {
+  type        = string
+  default     = "980921746832"
+  description = "AWS account ID to share the AMI with"
+}
+```
+
 #### AMI Creation Process
 
 1. Packer provisions a temporary EC2 instance with Ubuntu 24.04
 2. Uploads application binary and setup scripts
 3. Installs MySQL and configures the application
 4. Creates an AMI from the instance
-5. Shares the AMI with the DEMO account using `ami_migration.sh`
+5. Shares the AMI with the target account using `ami_migration.sh`
 
 #### Launching an Instance from the AMI
 
@@ -405,6 +471,48 @@ aws ec2 run-instances \
 
 The application is packaged as a Google Compute Engine image using Packer and can be deployed as VM instances.
 
+#### Packer Configuration for GCP
+
+The Packer configuration in `machine-image.pkr.hcl` uses the following variables for GCP:
+
+```hcl
+variable "gcp_dev_project" {
+  type        = string
+  default     = "dev-project-452101"
+  description = "GCP DEV project ID"
+}
+
+variable "gcp_target_project" {
+  type        = string
+  default     = ""
+  description = "GCP DEMO project ID to share the image with"
+}
+
+variable "gcp_base_image" {
+  type        = string
+  default     = "ubuntu-2404-noble-amd64-v20250214"
+  description = "Base GCP image to use for the build"
+}
+
+variable "gcp_build_zone" {
+  type        = string
+  default     = "us-east1-b"
+  description = "GCP zone for building the image"
+}
+
+variable "gcp_vm_type" {
+  type        = string
+  default     = "e2-medium"
+  description = "GCP machine type to use for the build"
+}
+
+variable "gcp_storage_region" {
+  type        = string
+  default     = "us"
+  description = "GCP storage location for the machine image"
+}
+```
+
 #### GCP Image Creation Process
 
 1. Packer provisions a temporary VM instance with Ubuntu 24.04
@@ -412,14 +520,14 @@ The application is packaged as a Google Compute Engine image using Packer and ca
 3. Installs MySQL and configures the application
 4. Creates a GCP Compute Image
 5. Creates a Machine Image using `gcp_migration.sh`
-6. Shares the image with the DEMO project
+6. Shares the image with the target project
 
 #### Launching a VM from the Machine Image
 
 ```bash
 gcloud compute instances create instance-name \
   --machine-type e2-medium \
-  --image custom-nodejs-mysql-xxxxx \
+  --image webapp-nodejs-mysql-xxxxx \
   --image-project project-id
 ```
 
@@ -445,7 +553,7 @@ resource "google_compute_instance" "webapp" {
   
   boot_disk {
     initialize_params {
-      image = "custom-nodejs-mysql-xxxxx"
+      image = "webapp-nodejs-mysql-xxxxx"
     }
   }
 }
@@ -555,14 +663,45 @@ The application logs are output to stdout/stderr and can be collected by service
 
 **Symptoms**: The Packer build process fails during GitHub Actions workflow.
 
-**Solution**:
-1. Check GitHub Actions secrets are properly set
-2. Verify IAM permissions for AWS and GCP service accounts
-3. Review Packer logs in GitHub Actions output
-4. Run Packer validate locally:
-   ```bash
-   cd infra/packer && packer validate machine-image.pkr.hcl
-   ```
+**Possible Causes and Solutions**:
+
+1. **Variable Name Mismatch**:
+   - Ensure the variable names in `machine-image.pkr.hcl` match those passed to Packer in the GitHub Actions workflow
+   - Check for common errors like using `demo_account_id` when the variable is now `target_account_id`
+
+2. **Missing Variables**:
+   - Make sure all required variables are passed to Packer. Required variables include:
+     - `target_account_id`
+     - `gcp_dev_project`
+     - `gcp_target_project`
+     - `aws_build_region`
+     - `gcp_build_zone`
+     - `aws_vm_size`
+     - `gcp_vm_type`
+     - `gcp_storage_region`
+
+3. **GitHub Actions Workflow Issues**:
+   - Check if the workflow is triggered correctly
+   - Verify the workflow steps execute in the expected order
+   - Examine any errors in composite actions
+
+4. **Composite Action Problems**:
+   - Ensure all necessary actions (setup-environment, build-binary) exist in the correct locations
+   - Check for proper permissions in the action files
+   - Verify the workflow is properly referencing the actions
+
+5. **Other Issues**:
+   - Check GitHub Actions secrets are properly set
+   - Verify IAM permissions for AWS and GCP service accounts
+   - Review Packer logs in GitHub Actions output
+   - Run Packer validate locally:
+     ```bash
+     cd infra/packer && packer validate \
+       -var "target_account_id=your-account-id" \
+       -var "gcp_dev_project=your-project-id" \
+       -var "gcp_target_project=target-project-id" \
+       machine-image.pkr.hcl
+     ```
 
 ## Dependencies
 
@@ -607,7 +746,9 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/) specifica
 - `test`: Adding or updating tests
 - `chore`: Build process or auxiliary tool changes
 
+## License
 
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgements
 
