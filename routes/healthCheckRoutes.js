@@ -5,7 +5,7 @@ const {
   validateHealthCheckRequest,
 } = require("../middleware/healthCheckMiddleware");
 
-router.get("/", validateHealthCheckRequest, performHealthCheck);
+router.get("/", validateHealthCheckRequest, handleHealthCheck);
 router.all("/", validateHealthCheckRequest, (req, res) =>
   res.status(405).end()
 );
