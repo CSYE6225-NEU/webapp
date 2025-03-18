@@ -11,19 +11,6 @@ jobs:
   run-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h localhost -uroot -p${{ secrets.DB_PASSWORD }}"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -32,15 +19,26 @@ jobs:
         uses: ./.github/actions/setup-environment
         with:
           node-version: '18'
-        
-      - name: Prepare MySQL
+      
+      - name: Start MySQL
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
         run: |
+          docker run --name mysql-test \
+            -e MYSQL_ROOT_PASSWORD="${DB_PASSWORD}" \
+            -e MYSQL_DATABASE="${DB_NAME}" \
+            -p 3306:3306 \
+            -d mysql:8.0
+          
+          # Wait for MySQL to start without exposing password in logs
+          echo "Waiting for MySQL to start..."
           for i in {30..0}; do
-            if mysqladmin ping -h 127.0.0.1 -uroot -p"${{ secrets.DB_PASSWORD }}" --silent; then
+            if docker exec mysql-test mysqladmin ping -h localhost -p"${DB_PASSWORD}" --silent 2>/dev/null; then
               echo "MySQL is up and running"
               break
             fi
-            echo "Waiting for MySQL..."
+            echo "Still waiting..."
             sleep 2
           done
           if [ "$i" = 0 ]; then
@@ -66,6 +64,10 @@ jobs:
       - name: Report Test Status
         if: always()
         run: echo "::notice::Unit tests completed with status ${{ job.status }}"
+        
+      - name: Cleanup MySQL Container
+        if: always()
+        run: docker rm -f mysql-test || true
 
   validate_packer:
     name: Validate Packer Script
