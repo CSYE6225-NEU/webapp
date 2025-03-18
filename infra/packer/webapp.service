@@ -1,14 +1,14 @@
 [Unit]
-Description=My Node.js Application
+Description=CSYE6225 Web Application
 After=network.target
 
 [Service]
-ExecStart=/opt/myapp/webapp
+ExecStart=/opt/csye6225/webapp
 Restart=always
 User=csye6225
 Group=csye6225
-EnvironmentFile=/opt/myapp/.env
-WorkingDirectory=/opt/myapp
+EnvironmentFile=/opt/csye6225/.env
+WorkingDirectory=/opt/csye6225
 StandardOutput=journal
 StandardError=journal
 

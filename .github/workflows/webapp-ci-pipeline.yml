@@ -15,12 +15,12 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_ROOT_PASSWORD: ${{ secrets.DB_PASSWORD }}
           MYSQL_DATABASE: ${{ secrets.DB_NAME }}
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h localhost -uroot -proot_password"
+          --health-cmd="mysqladmin ping -h localhost -uroot -p${{ secrets.DB_PASSWORD }}"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
@@ -36,7 +36,7 @@ jobs:
       - name: Prepare MySQL
         run: |
           for i in {30..0}; do
-            if mysqladmin ping -h 127.0.0.1 -uroot -p"${{ secrets.MYSQL_ROOT_PASSWORD }}" --silent; then
+            if mysqladmin ping -h 127.0.0.1 -uroot -p"${{ secrets.DB_PASSWORD }}" --silent; then
               echo "MySQL is up and running"
               break
             fi
@@ -54,9 +54,10 @@ jobs:
           DB_HOST=${{ secrets.DB_HOST }}
           DB_PORT=${{ secrets.DB_PORT }}
           DB_USER=${{ secrets.DB_USER }}
-          MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
           DB_NAME=${{ secrets.DB_NAME }}
           PORT=${{ secrets.PORT }}
+          S3_BUCKET_NAME=test-bucket
           EOF
           
       - name: Run Tests
@@ -97,6 +98,13 @@ jobs:
           echo "PR Number: ${{ github.event.number }}"
           echo "List workflow files:"
           find .github -type f | sort
+          
+      - name: Copy Service File to Packer Directory
+        run: |
+          # Ensure the packer directory exists
+          mkdir -p infra/packer
+          # Copy webapp.service to the packer directory
+          cp infra/packer/webapp.service infra/packer/ || echo "Service file already in place"
           
       - name: Initialize Packer
         working-directory: infra/packer

@@ -1,28 +1,28 @@
-// app.js
 const express = require("express");
-const {
-  validateHealthCheckRequest,
-} = require("./middleware/healthCheckMiddleware");
-const { handleHealthCheck } = require("./controllers/healthCheckController");
+const healthCheckRoutes = require("./routes/healthCheckRoutes");
+const fileRoutes = require("./routes/fileRoutes");
+const sequelize = require("./config/database");
+const healthCheck = require("./models/HealthCheck");
+const File = require("./models/File");
+const { initializeDatabase } = require("./utils/dbInitializer");
 
 const app = express();
 
-// Health check endpoint with proper callback function
-app.get("/healthz", validateHealthCheckRequest, handleHealthCheck);
+// Middleware
+app.use(express.json());
 
-// Handle unsupported methods for /healthz
-app.all("/healthz", (req, res) => {
-  res.set({
-    "Cache-Control": "no-cache, no-store, must-revalidate",
-    Pragma: "no-cache",
-    "X-Content-Type-Options": "nosniff",
-  });
-  res.status(405).end();
-});
+// Routes
+app.use("/healthz", healthCheckRoutes);
+app.use("/v1/file", fileRoutes);
 
-// Handle unsupported routes
-app.use((req, res) => {
-  res.status(404).end();
-});
+// Initialize database
+(async () => {
+  try {
+    await initializeDatabase(sequelize, healthCheck, File);
+    console.log("Database sync complete");
+  } catch (error) {
+    console.error("Unable to sync database:", error);
+  }
+})();
 
 module.exports = app;

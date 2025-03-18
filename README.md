@@ -116,7 +116,7 @@ PORT=8080
 DB_PORT=3306
 DB_NAME=health_check
 DB_USER=root
-MYSQL_ROOT_PASSWORD=your_database_password
+DB_PASSWORD=your_database_password
 DB_HOST=localhost
 ```
 

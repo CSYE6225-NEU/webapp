@@ -33,6 +33,29 @@ jobs:
       - name: Debug Build Output
         run: ls -lah infra/packer/dist/
 
+      # Copy the webapp service file
+      - name: Copy Service File
+        run: |
+          # Create webapp.service file in the packer directory
+          cat > infra/packer/webapp.service << 'EOL'
+          [Unit]
+          Description=CSYE6225 Web Application
+          After=network.target
+
+          [Service]
+          ExecStart=/opt/csye6225/webapp
+          Restart=always
+          User=csye6225
+          Group=csye6225
+          EnvironmentFile=/opt/csye6225/.env
+          WorkingDirectory=/opt/csye6225
+          StandardOutput=journal
+          StandardError=journal
+
+          [Install]
+          WantedBy=multi-user.target
+          EOL
+
       # AWS DEV Configuration
       - name: Configure AWS Development Credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -158,8 +181,8 @@ jobs:
           gcloud config set project ${GCP_DEMO_PROJECT_ID}
           
           # List and verify images in DEMO project
-          gcloud compute images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:copy-webapp-nodejs-mysql" --limit=5
-          gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-webapp-nodejs-mysql" --limit=5
+          gcloud compute images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:copy-webapp-nodejs-rds-s3" --limit=5
+          gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-webapp-nodejs-rds-s3" --limit=5
 
       # Run the AMI migration script after AWS AMI is verified
       - name: Migrate AWS AMI to Target Environment

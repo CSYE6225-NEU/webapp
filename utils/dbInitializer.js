@@ -6,7 +6,7 @@ async function createDatabase() {
     const connection = await mysql.createConnection({
       host: process.env.DB_HOST,
       user: process.env.DB_USER,
-      password: process.env.MYSQL_ROOT_PASSWORD,
+      password: process.env.DB_PASSWORD,
     });
 
     await connection.query(
@@ -22,11 +22,16 @@ async function createDatabase() {
   }
 }
 
-async function initializeDatabase(sequelize, healthCheck) {
+async function initializeDatabase(sequelize, models) {
   try {
     await createDatabase();
     await sequelize.authenticate();
-    await healthCheck.sync();
+    
+    // Sync all models
+    for (const model of Object.values(models)) {
+      await model.sync();
+    }
+    
     console.log("Database initialized successfully");
     return true;
   } catch (error) {

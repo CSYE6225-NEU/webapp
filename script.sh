@@ -1,80 +1,103 @@
 #!/bin/bash
 
-# Configuration Variables
-# ====================================================
-DATABASE_NAME="local"           # The name of the database to be created and used by the application
-GROUP_NAME="csye6225"           # The Linux group for managing application resources and permissions
-USER_NAME="csye6225"            # The user that will run the application and belong to the application group
-APP_ZIP="./webapp.zip"          # Path to the application archive on the local machine
-APP_DIRECTORY="/opt/csye6225"   # Directory on the local server where the application will be deployed
+# Setup automation for web application deployment
+# Handles user creation, app configuration,
+# and service initialization for continuous operation
 
-# Core Functions
-# ====================================================
-
-# Update system packages to ensure we have the latest versions
-update_system_packages() {
-  echo "Starting system update..."
-  sudo apt update && sudo apt upgrade -y
+# Creates dedicated application user account
+create_system_user() {
+    echo "Setting up system user for application..."
+    sudo groupadd -f csye6225
+    sudo useradd -r -M -g csye6225 -s /usr/sbin/nologin csye6225
 }
 
-# Check if 'unzip' is installed and install it if necessary
-validate_unzip_package() {
-  echo "Validating unzip installation..."
-  if ! command -v unzip &> /dev/null; then
-    echo "Installing unzip package..."
-    sudo apt update -y
-    sudo apt install unzip -y
-  else
-    echo "Unzip package already installed"
-  fi
+# Prepares system with required packages
+install_dependencies() {
+    echo "Refreshing package lists and installing required software..."
+    sudo apt-get update -y
+    # No longer installing MySQL as we're using RDS
+    # Install any other dependencies needed
+    sudo apt-get install -y awscli
 }
 
-# Install and configure the MySQL database server
-setup_database() {
-  echo "Beginning MySQL installation..."
-  sudo apt install mysql-server -y
-  
-  echo "Configuring MySQL service..."
-  sudo systemctl enable --now mysql
-  
-  echo "Initializing database: $DATABASE_NAME..."
-  sudo mysql -e "CREATE DATABASE IF NOT EXISTS $DATABASE_NAME;"
+# Deploys application components
+setup_application() {
+    echo "Preparing application environment..."
+    sudo mkdir -p /opt/csye6225
+    sudo mv /tmp/webapp /opt/csye6225/webapp
+    sudo chmod +x /opt/csye6225/webapp
 }
 
-# Create the necessary user and group for the application
-configure_system_users() {
-  echo "Setting up group: $GROUP_NAME..."
-  sudo groupadd -f $GROUP_NAME
-  
-  echo "Creating system user: $USER_NAME..."
-  sudo useradd -m -g $GROUP_NAME -s /bin/bash $USER_NAME || echo "User $USER_NAME exists"
+# Creates systemd service file
+create_systemd_service() {
+    echo "Creating systemd service file..."
+    cat <<EOF | sudo tee /etc/systemd/system/webapp.service > /dev/null
+[Unit]
+Description=CSYE6225 Web Application
+After=network.target
+
+[Service]
+Type=simple
+User=csye6225
+Group=csye6225
+WorkingDirectory=/opt/csye6225
+EnvironmentFile=/opt/csye6225/.env
+ExecStart=/opt/csye6225/webapp
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
 }
 
-# Deploy the application files to the server
-deploy_application() {
-  echo "Preparing application files..."
-  sudo mkdir -p /tmp/app && sudo chmod 755 /tmp/app
-  cp "$APP_ZIP" /tmp/app/webapp.zip
-  
-  echo "Deploying application..."
-  sudo mkdir -p $APP_DIRECTORY
-  sudo unzip -o /tmp/app/webapp.zip -d $APP_DIRECTORY
-  
-  echo "Setting permissions..."
-  sudo chown -R $USER_NAME:$GROUP_NAME $APP_DIRECTORY
-  sudo chmod -R 750 $APP_DIRECTORY
+# Sets runtime configuration parameters
+create_placeholder_env_file() {
+    echo "Generating placeholder configuration parameters..."
+    # This will be replaced with actual values by user data on instance boot
+    cat <<EOF | sudo tee /opt/csye6225/.env > /dev/null
+DB_HOST=placeholder_db_host
+DB_PORT=3306
+DB_USER=placeholder_db_user
+DB_PASSWORD=placeholder_db_password
+DB_NAME=placeholder_db_name
+S3_BUCKET_NAME=placeholder_bucket_name
+PORT=8080
+EOF
+
+    # Restrict access to sensitive configuration data
+    sudo chmod 600 /opt/csye6225/.env
 }
 
-# Main Execution
-# ====================================================
+# Establishes security controls
+set_permissions() {
+    echo "Applying security permissions..."
+    sudo chown -R csye6225:csye6225 /opt/csye6225
+    sudo chmod -R 750 /opt/csye6225
+}
+
+# Configures application for automatic operation
+setup_systemd_service() {
+    echo "Registering application as system service..."
+    sudo chmod 644 /etc/systemd/system/webapp.service
+
+    # Reload systemd, enable and start the webapp service
+    echo "Activating automatic startup configuration..."
+    sudo systemctl daemon-reload
+    sudo systemctl enable webapp.service
+    # Don't start the service now - it will start on boot with correct config
+}
+
+# Orchestrates deployment sequence
 main() {
-  update_system_packages
-  validate_unzip_package
-  setup_database
-  configure_system_users
-  deploy_application
-  
-  echo "Deployment completed successfully!"
+    create_system_user
+    install_dependencies
+    setup_application
+    create_systemd_service
+    create_placeholder_env_file
+    set_permissions
+    setup_systemd_service
+    echo "Deployment successfully completed!"
 }
 
 # Execute the main function
