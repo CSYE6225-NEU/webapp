@@ -22,13 +22,17 @@ async function createDatabase() {
   }
 }
 
-async function initializeDatabase(sequelize, models) {
+async function initializeDatabase(sequelize, ...models) {
   try {
+    // We may still want to create the database if it doesn't exist
+    // though this might not be necessary with RDS
     await createDatabase();
+    
+    // Authenticate with the database
     await sequelize.authenticate();
     
-    // Sync all models
-    for (const model of Object.values(models)) {
+    // Sync all provided models
+    for (const model of models) {
       await model.sync();
     }
     

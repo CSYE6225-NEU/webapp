@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { performHealthCheck } = require("../controllers/healthCheckController");
+const { handleHealthCheck } = require("../controllers/healthCheckController");
 const {
   validateHealthCheckRequest,
 } = require("../middleware/healthCheckMiddleware");
