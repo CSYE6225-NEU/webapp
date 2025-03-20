@@ -6,7 +6,7 @@ async function createDatabase() {
     const connection = await mysql.createConnection({
       host: process.env.DB_HOST,
       user: process.env.DB_USER,
-      password: process.env.MYSQL_ROOT_PASSWORD,
+      password: process.env.DB_PASSWORD,
     });
 
     await connection.query(
@@ -22,11 +22,20 @@ async function createDatabase() {
   }
 }
 
-async function initializeDatabase(sequelize, healthCheck) {
+async function initializeDatabase(sequelize, ...models) {
   try {
+    // We may still want to create the database if it doesn't exist
+    // though this might not be necessary with RDS
     await createDatabase();
+    
+    // Authenticate with the database
     await sequelize.authenticate();
-    await healthCheck.sync();
+    
+    // Sync all provided models
+    for (const model of models) {
+      await model.sync();
+    }
+    
     console.log("Database initialized successfully");
     return true;
   } catch (error) {
