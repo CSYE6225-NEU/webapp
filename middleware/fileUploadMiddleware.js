@@ -1,3 +1,4 @@
+// middleware/fileUploadMiddleware.js
 const multer = require("multer");
 
 // Configure multer to store files in memory
@@ -38,7 +39,46 @@ const handleFileUploadError = (err, req, res, next) => {
   next();
 };
 
+// Method validation middleware for file routes
+const validateFileMethod = (req, res, next) => {
+  // For the root path /v1/file
+  if (req.path === '/') {
+    // Only allow POST and GET methods
+    if (req.method === 'POST' || req.method === 'GET') {
+      return next();
+    }
+    
+    // Return 405 for all other methods
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
+  
+  // For specific file paths /v1/file/:id
+  if (req.path.match(/^\/[^\/]+$/)) {  // Matches /:id but not nested paths
+    // Only allow GET and DELETE methods
+    if (req.method === 'GET' || req.method === 'DELETE') {
+      return next();
+    }
+    
+    // Return 405 for all other methods
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
+  
+  // If we get here, path wasn't handled - pass to next middleware
+  next();
+};
+
+// Handle proper response for GET requests to root path
+const handleRootGet = (req, res, next) => {
+  if (req.method === 'GET' && req.path === '/') {
+    // For GET /v1/file (without an ID), return 400 Bad Request
+    return res.status(400).json({ error: "Bad Request" });
+  }
+  next();
+};
+
 module.exports = {
   upload,
   handleFileUploadError,
+  validateFileMethod,
+  handleRootGet
 };

@@ -1,15 +1,23 @@
+// routes/fileRoutes.js
 const express = require("express");
 const router = express.Router();
 const { uploadFile, getFile, deleteFile } = require("../controllers/fileController");
-const { upload, handleFileUploadError } = require("../middleware/fileUploadMiddleware");
+const { 
+  upload, 
+  handleFileUploadError,
+  validateFileMethod,
+  handleRootGet
+} = require("../middleware/fileUploadMiddleware");
 
-// POST /v1/file - Upload a file
+// Apply method validation to all requests first
+router.use(validateFileMethod);
+
+// Handle GET requests to root path
+router.use(handleRootGet);
+
+// Define the allowed routes
 router.post("/", upload.single("profilePic"), handleFileUploadError, uploadFile);
-
-// GET /v1/file/:id - Get file metadata
 router.get("/:id", getFile);
-
-// DELETE /v1/file/:id - Delete a file
 router.delete("/:id", deleteFile);
 
 module.exports = router;
