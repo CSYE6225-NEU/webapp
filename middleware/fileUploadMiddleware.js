@@ -1,4 +1,3 @@
-// middleware/fileUploadMiddleware.js
 const multer = require("multer");
 
 // Configure multer to store files in memory

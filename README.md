@@ -1,15 +1,17 @@
-# NodeJS MySQL Health Check Application
+# NodeJS Cloud-Native Web Application with AWS RDS and S3 Integration
 
-A production-ready NodeJS application with MySQL integration that provides a health check endpoint to monitor system status and database connectivity. The application is packaged for deployment across multiple cloud platforms (AWS and GCP) with comprehensive CI/CD pipelines.
+A production-ready NodeJS application with AWS RDS and S3 integration that provides health check monitoring and file storage capabilities. The application is designed for deployment on AWS with comprehensive CI/CD pipelines.
 
 ## Table of Contents
 
 - [Overview](#overview)
-- [Features](#features)
+- [Feature Highlights](#feature-highlights)
 - [System Architecture](#system-architecture)
+- [Infrastructure Components](#infrastructure-components)
 - [Prerequisites](#prerequisites)
 - [Environment Setup](#environment-setup)
-- [Database Setup](#database-setup)
+- [Database Configuration](#database-configuration)
+- [S3 Storage Integration](#s3-storage-integration)
 - [Installation](#installation)
 - [Running the Application](#running-the-application)
 - [API Documentation](#api-documentation)
@@ -17,29 +19,53 @@ A production-ready NodeJS application with MySQL integration that provides a hea
 - [Testing](#testing)
 - [CI/CD Pipeline](#cicd-pipeline)
 - [Deployment](#deployment)
-  - [AWS Deployment](#aws-deployment)
-  - [GCP Deployment](#gcp-deployment)
-- [Monitoring](#monitoring)
 - [Security Considerations](#security-considerations)
 - [Troubleshooting](#troubleshooting)
+- [Dependencies](#dependencies)
 - [Contributing](#contributing)
 - [License](#license)
 - [Acknowledgements](#acknowledgements)
 
+
 ## Overview
 
-This project implements a Node.js web application with health monitoring capabilities that integrates with MySQL for data persistence. It features a robust CI/CD pipeline using GitHub Actions for automated testing, building, and deployment to both AWS and GCP cloud environments. The application is packaged as a standalone binary and deployed as custom webapp machine images (AMIs in AWS and Compute Engine images in GCP).
+This project implements a Node.js web application with health monitoring capabilities that integrates with AWS RDS for data persistence and AWS S3 for file storage. It features a robust CI/CD pipeline using GitHub Actions for automated testing, building, and deployment to cloud environments. The application is packaged as a standalone binary and deployed as custom webapp machine images (AMIs in AWS and Compute Engine images in GCP).
 
 ### Use Case
 
-The application provides a reliable health check API endpoint that can be used for monitoring service availability while demonstrating a comprehensive cloud deployment workflow across multiple providers.
+The application provides a reliable health check API endpoint for monitoring service availability and robust file storage capabilities, demonstrating cloud-native AWS service integration within a comprehensive deployment workflow.
 
-## Features
+## Feature Highlights
+
+### AWS Service Integration
+
+- **RDS Database Integration**:
+  - Moves database from local MySQL to AWS RDS
+  - Configures database in private subnet for security
+  - Uses database parameter groups for optimal configuration
+  - Implements connection pooling for performance
+  - Secures access through VPC security groups
+
+- **S3 Storage Solution**:
+  - UUID-named S3 bucket with server-side encryption
+  - Lifecycle policies for automatic storage class transitions after 30 days
+  - Direct upload to S3 without temporary local storage
+  - Secure URLs generation for file access
+  - Proper cleanup of S3 objects on deletion
+
+- **IAM Security Integration**:
+  - EC2 instance profiles for secure AWS service access
+  - Custom IAM policies following least privilege principle
+  - No hardcoded AWS credentials in application code
+  - IAM role-based authorization for S3 operations
+
+### Application Features
 
 - **Express API Server**: Lightweight and efficient RESTful API implementation
 - **MySQL Integration**: Data persistence using a relational database
 - **Sequelize ORM**: Type-safe database interactions with migration support
 - **Health Monitoring**: Dedicated health check endpoint with database verification
+- **File Operations**: Upload, retrieve, and delete files via API
 - **Cross-Platform Binary**: Packaged as a standalone executable using `pkg`
 - **Infrastructure as Code**: Packer templates for creating machine images
 - **Multi-Cloud Support**: Deployment to both AWS and GCP
@@ -50,30 +76,38 @@ The application provides a reliable health check API endpoint that can be used f
   - Blocks requests with non-empty payloads
   - Blocks requests with query parameters
   - Includes no-cache headers in responses
+  - Properly handles HTTP method restrictions
 
 ## System Architecture
 
-### Component Diagram
+### Component Interaction Diagram
 
 ```
-┌───────────────┐     ┌───────────────┐     ┌───────────────┐
-│  HTTP Client  │────▶│  Express API  │────▶│    MySQL DB   │
-└───────────────┘     └───────────────┘     └───────────────┘
-                             │
-                             ▼
-                      ┌───────────────┐
-                      │  Health Check │
-                      │   Monitoring  │
-                      └───────────────┘
+┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
+│   HTTP Client   │─────▶│   Express API   │─────▶│     AWS RDS     │
+└─────────────────┘      └─────────────────┘      └─────────────────┘
+                                │                         ▲
+                                │                         │
+                                ▼                         │
+                         ┌─────────────────┐              │
+                         │  Sequelize ORM  │──────────────┘
+                         └─────────────────┘
+                                │
+                                │
+                                ▼
+                         ┌─────────────────┐      ┌─────────────────┐
+                         │  File Service   │─────▶│     AWS S3      │
+                         └─────────────────┘      └─────────────────┘
 ```
 
 ### Application Components
 
 - **Express Server**: Handles HTTP requests, input validation, and response formatting
-- **Controller Layer**: Implements business logic for health check operations
-- **Middleware Layer**: Performs request validation and security checks
+- **Controller Layer**: Implements business logic for health check and file operations
+- **Middleware Layer**: Performs request validation, method checking, and security controls
 - **Model Layer**: Defines database schema and interactions using Sequelize ORM
-- **Database Layer**: MySQL database for persistent storage of health check records
+- **Service Layer**: Handles S3 interactions for file storage and retrieval
+- **Database Layer**: AWS RDS MySQL/PostgreSQL database for persistent storage
 - **Utility Services**: Database initialization and configuration management
 
 ### Deployment Architecture
@@ -95,11 +129,67 @@ The application provides a reliable health check API endpoint that can be used f
         └─────────────────┘                    └─────────────────┘
 ```
 
+## Infrastructure Components
+
+### AWS Resources Utilized
+
+- **VPC Network**: Custom VPC with public and private subnets
+- **EC2 Instance**: Hosts the application with custom AMI
+- **RDS Instance**: MySQL/PostgreSQL database for persistent storage
+- **S3 Bucket**: Object storage for file uploads
+- **Security Groups**: Network traffic control for instances
+- **IAM Roles**: Identity and access management for services
+- **Internet Gateway**: Public internet access for EC2
+- **Route Tables**: Traffic routing between subnets
+- **Subnet Groups**: Database subnet configuration
+- **Parameter Groups**: Database configuration parameters
+
+### Architecture Diagram
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                              AWS Region                            │
+│                                                                    │
+│  ┌────────────────┐     ┌────────────────┐     ┌────────────────┐  │
+│  │   AZ - us-1a   │     │   AZ - us-1b   │     │   AZ - us-1c   │  │
+│  │                │     │                │     │                │  │
+│  │  ┌──────────┐  │     │  ┌──────────┐  │     │  ┌──────────┐  │  │
+│  │  │  Public  │  │     │  │  Public  │  │     │  │  Public  │  │  │
+│  │  │  Subnet  │  │     │  │  Subnet  │  │     │  │  Subnet  │  │  │
+│  │  └──────────┘  │     │  └──────────┘  │     │  └──────────┘  │  │
+│  │       │        │     │                │     │                │  │
+│  │       ▼        │     │                │     │                │  │
+│  │  ┌──────────┐  │     │                │     │                │  │
+│  │  │    EC2   │  │     │                │     │                │  │
+│  │  │ Instance │  │     │                │     │                │  │
+│  │  └──────────┘  │     │                │     │                │  │
+│  │       │        │     │                │     │                │  │
+│  │       │        │     │                │     │                │  │
+│  │  ┌──────────┐  │     │  ┌──────────┐  │     │  ┌──────────┐  │  │
+│  │  │  Private │  │     │  │  Private │  │     │  │  Private │  │  │
+│  │  │  Subnet  │◀───────┼──│  Subnet  │◀───────┼──│  Subnet  │  │  │
+│  │  └──────────┘  │     │  └──────────┘  │     │  └──────────┘  │  │
+│  │                │     │       │        │     │                │  │
+│  └────────────────┘     └───────┼────────┘     └────────────────┘  │
+│                                 │                                   │
+│                                 ▼                                   │
+│                         ┌──────────────┐                            │
+│                         │     RDS      │                            │
+│                         │   Instance   │                            │
+│                         └──────────────┘                            │
+│                                                                     │
+│                         ┌──────────────┐                            │
+│                         │      S3      │                            │
+│                         │    Bucket    │                            │
+│                         └──────────────┘                            │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
 ## Prerequisites
 
-- **Node.js**: v14.x or higher
-- **npm**: v6.x or later
-- **MySQL**: v5.7 or higher
+- **Node.js**: v18.x or higher
+- **npm**: v8.x or later
+- **MySQL/PostgreSQL**: v5.7 or higher for local development
 - **Git**: v2.x or later
 - **pkg**: v5.x or later (for binary packaging)
 - **AWS CLI**: v2.x (for AWS deployment)
@@ -109,32 +199,104 @@ The application provides a reliable health check API endpoint that can be used f
 
 ## Environment Setup
 
+### Local Development Environment
+
 1. Create a `.env` file in the root directory with the following variables:
 
 ```env
+# Application configuration
 PORT=8080
-DB_PORT=3306
-DB_NAME=health_check
+NODE_ENV=development
+
+# Local Database configuration
+DB_NAME=csye6225
 DB_USER=root
-DB_PASSWORD=your_database_password
+DB_PASSWORD=your_local_password
 DB_HOST=localhost
+DB_PORT=3306
+
+# Mock S3 configuration for local development
+S3_BUCKET_NAME=test-bucket
+AWS_REGION=us-east-1
 ```
 
-## Database Setup
+### Production Environment Variables
+
+When deployed to EC2, these environment variables are set by the user data script:
+
+```env
+# Database Configuration
+DB_HOST=your-rds-endpoint.region.rds.amazonaws.com
+DB_PORT=3306
+DB_NAME=csye6225
+DB_USER=csye6225
+DB_PASSWORD=your-secure-password
+
+# S3 Configuration
+S3_BUCKET_NAME=your-s3-bucket-uuid
+PORT=8080
+```
+
+## Database Configuration
+
+### Local Database Setup
 
 The database is bootstrapped automatically when the application runs. If you want to configure it manually beforehand:
 
 1. Install MySQL Server on your system
 2. Create a new database:
 ```sql
-CREATE DATABASE health_check;
+CREATE DATABASE csye6225;
 ```
 3. Create a database user with appropriate permissions:
 ```sql
 CREATE USER 'root'@'localhost' IDENTIFIED BY 'your_database_password';
-GRANT ALL PRIVILEGES ON health_check.* TO 'root'@'localhost';
+GRANT ALL PRIVILEGES ON csye6225.* TO 'root'@'localhost';
 FLUSH PRIVILEGES;
 ```
+
+### RDS Integration Details
+
+The application connects to AWS RDS using Sequelize ORM. Key integration points:
+
+- **Connection Management**: Uses connection pooling for performance
+- **Schema Migration**: Automatic table creation through Sequelize models
+- **Error Handling**: Robust error handling for database connection issues
+- **Transaction Support**: ACID compliance for data operations
+- **Security**: Connection over private subnet with security group rules
+
+## S3 Storage Integration
+
+### AWS SDK Integration
+
+The application uses the AWS SDK for JavaScript (v2) to interact with S3:
+
+```javascript
+const AWS = require("aws-sdk");
+const s3 = new AWS.S3();
+
+// When running on EC2 with proper IAM role, credentials are automatically provided
+// No need to configure credentials in the code
+```
+
+### File Operation Flow
+
+1. **Upload**: 
+   - File received via multipart form data
+   - File validated for type and size
+   - File uploaded directly to S3 with UUID-based key
+   - Metadata stored in RDS
+
+2. **Retrieval**:
+   - File ID received in API request
+   - Metadata retrieved from database
+   - S3 URL returned to client
+
+3. **Deletion**:
+   - File ID received in API request
+   - Metadata retrieved from database
+   - File deleted from S3
+   - Metadata removed from database
 
 ## Installation
 
@@ -178,7 +340,7 @@ The server will start on the port specified in your .env file.
 npm install -g pkg
 
 # Build the binary
-pkg server.js --output dist/webapp --targets node14-linux-x64
+pkg server.js --output dist/webapp --targets node18-linux-x64
 
 # Run the binary
 ./dist/webapp
@@ -233,6 +395,56 @@ Verifies application health by validating database connectivity.
 - Query parameters are not allowed
 - HEAD requests are not supported
 
+### File Operations API
+
+#### POST /v1/file
+
+Uploads a file to S3 and stores metadata in the database.
+
+**Request**:
+- Method: POST
+- Content-Type: multipart/form-data
+- Body: Form data with "profilePic" field containing an image file
+
+**Response**:
+- **201 Created**: File uploaded successfully
+  ```json
+  {
+    "file_name": "image.jpg",
+    "id": "d290f1ee-6c54-4b01-90e6-d701748f0851",
+    "url": "https://bucket-name.s3.amazonaws.com/d290f1ee-6c54-4b01-90e6-d701748f0851/image.jpg",
+    "upload_date": "2025-03-19"
+  }
+  ```
+- **400 Bad Request**: Invalid request or file type
+- **405 Method Not Allowed**: Invalid HTTP method
+
+#### GET /v1/file/{id}
+
+Retrieves metadata for a specific file.
+
+**Request**:
+- Method: GET
+- Path Parameter: id - The UUID of the file
+
+**Response**:
+- **200 OK**: File metadata retrieved successfully
+- **404 Not Found**: File not found
+- **405 Method Not Allowed**: Invalid HTTP method
+
+#### DELETE /v1/file/{id}
+
+Deletes a file from S3 and removes its metadata from the database.
+
+**Request**:
+- Method: DELETE
+- Path Parameter: id - The UUID of the file
+
+**Response**:
+- **204 No Content**: File deleted successfully
+- **404 Not Found**: File not found
+- **405 Method Not Allowed**: Invalid HTTP method
+
 ## Development
 
 ### Project Structure
@@ -242,11 +454,19 @@ Verifies application health by validating database connectivity.
 ├── config/               # Configuration files
 │   └── database.js       # Database connection setup
 ├── controllers/          # Request handlers
+│   ├── fileController.js # File operations handlers
 │   └── healthCheckController.js
 ├── middleware/           # Express middleware functions
+│   ├── fileUploadMiddleware.js # File upload middleware
 │   └── healthCheckMiddleware.js
 ├── models/               # Sequelize data models
+│   ├── File.js           # File metadata model
 │   └── HealthCheck.js
+├── routes/               # API routes
+│   ├── fileRoutes.js     # File operation routes
+│   └── healthCheckRoutes.js
+├── services/             # Service layer
+│   └── s3service.js      # S3 integration service
 ├── utils/                # Utility functions
 │   └── dbInitializer.js  # Database initialization
 ├── tests/                # Test files
@@ -432,7 +652,7 @@ variable "aws_build_region" {
 
 variable "aws_base_ami" {
   type        = string
-  default     = "ami-0812f893ed55215a7" // Ubuntu 24.04 LTS
+  default     = "ami-0c7217cdde317cfec" // Ubuntu 24.04 LTS
   description = "Base AMI ID to use for the build"
 }
 
@@ -453,7 +673,7 @@ variable "target_account_id" {
 
 1. Packer provisions a temporary EC2 instance with Ubuntu 24.04
 2. Uploads application binary and setup scripts
-3. Installs MySQL and configures the application
+3. Configures the application without installing local MySQL
 4. Creates an AMI from the instance
 5. Shares the AMI with the target account using `ami_migration.sh`
 
@@ -517,7 +737,7 @@ variable "gcp_storage_region" {
 
 1. Packer provisions a temporary VM instance with Ubuntu 24.04
 2. Uploads application binary and setup scripts
-3. Installs MySQL and configures the application
+3. Configures the application without installing local MySQL
 4. Creates a GCP Compute Image
 5. Creates a Machine Image using `gcp_migration.sh`
 6. Shares the image with the target project
@@ -527,7 +747,7 @@ variable "gcp_storage_region" {
 ```bash
 gcloud compute instances create instance-name \
   --machine-type e2-medium \
-  --image webapp-nodejs-mysql-xxxxx \
+  --image webapp-nodejs-rds-s3-xxxxx \
   --image-project project-id
 ```
 
@@ -553,46 +773,11 @@ resource "google_compute_instance" "webapp" {
   
   boot_disk {
     initialize_params {
-      image = "webapp-nodejs-mysql-xxxxx"
+      image = "webapp-nodejs-rds-s3-xxxxx"
     }
   }
 }
 ```
-
-## Monitoring
-
-### Health Check Monitoring
-
-The application's `/healthz` endpoint can be used with monitoring systems like Prometheus, Nagios, or cloud provider health checks.
-
-#### AWS CloudWatch Example
-
-```bash
-aws cloudwatch put-metric-alarm \
-  --alarm-name webapp-health-alarm \
-  --alarm-description "Alarm when health check fails" \
-  --metric-name HealthCheckStatus \
-  --namespace AWS/EC2 \
-  --statistic Minimum \
-  --period 60 \
-  --threshold 1 \
-  --comparison-operator LessThanThreshold \
-  --dimensions Name=InstanceId,Value=i-xxxxx \
-  --evaluation-periods 1 \
-  --alarm-actions arn:aws:sns:us-east-1:xxxx:alert-topic
-```
-
-#### GCP Monitoring Example
-
-```bash
-gcloud compute health-checks create http webapp-health-check \
-  --port 8080 \
-  --request-path /healthz
-```
-
-### Logging
-
-The application logs are output to stdout/stderr and can be collected by services like CloudWatch Logs or Google Cloud Logging.
 
 ## Security Considerations
 
@@ -604,14 +789,19 @@ The application logs are output to stdout/stderr and can be collected by service
 - **Content Length Validation**: Prevents certain types of attacks
 - **Method Restrictions**: Only allows specified HTTP methods
 - **Authorization Header Blocking**: Prevents unauthorized access attempts
+- **File Type Validation**: Only accepts image files for upload
 
 ### Deployment Security
 
+- **IAM Role-Based Access**: EC2 instance accesses S3 via IAM role, not credentials
+- **Private Subnet for RDS**: Database only accessible from application security group
+- **S3 Encryption**: Default server-side encryption for S3 objects
+- **S3 Lifecycle Policy**: Transitions objects to STANDARD_IA after 30 days
+- **Security Groups**: Traffic restricted to required ports and sources
 - **Dedicated User**: Application runs as a non-login system user
 - **File Permissions**: Restrictive permissions on application files
   - App directory: `750` (rwxr-x---)
   - Env file: `600` (rw-------)
-- **MySQL Security**: Database secured with password authentication
 - **AWS IAM**: Least privilege access for AWS operations
 - **GCP IAM**: Service account permissions follow principle of least privilege
 
@@ -627,14 +817,58 @@ The application logs are output to stdout/stderr and can be collected by service
 
 ### Common Issues
 
+#### S3 Access Issues
+
+**Symptoms**: Unable to upload or retrieve files, errors in logs about access denied
+
+**Solutions**:
+1. Verify IAM role is attached to EC2 instance
+   ```bash
+   # Check instance profile association
+   aws ec2 describe-instances --instance-id i-xxxx --query 'Reservations[0].Instances[0].IamInstanceProfile'
+   ```
+
+2. Check IAM policy permissions
+   ```bash
+   # View attached policies
+   aws iam list-attached-role-policies --role-name EC2-S3-Role
+   ```
+
+3. Ensure S3 bucket exists and name is correct in environment variables
+   ```bash
+   # List S3 buckets
+   aws s3 ls
+   ```
+
+#### RDS Connection Issues
+
+**Symptoms**: Health check fails with 503 error, database connection errors in logs
+
+**Solutions**:
+1. Verify security group allows traffic from application to RDS
+   ```bash
+   # Check security group rules
+   aws ec2 describe-security-groups --group-id sg-xxxx
+   ```
+
+2. Check RDS instance status and endpoint in AWS console
+3. Test database connection from EC2 instance:
+   ```bash
+   mysql -h <rds-endpoint> -u csye6225 -p
+   ```
+4. Verify environment variables are correctly set:
+   ```bash
+   cat /opt/csye6225/.env
+   ```
+
 #### Application Won't Start
 
 **Symptoms**: The application fails to start or returns a connection error.
 
 **Solution**:
-1. Check MySQL service is running:
+1. Check RDS is running:
    ```bash
-   sudo systemctl status mysql
+   aws rds describe-db-instances --db-instance-identifier csye6225 --query 'DBInstances[0].DBInstanceStatus'
    ```
 2. Verify database connection settings in `.env`
 3. Check permissions on application directory
@@ -643,21 +877,6 @@ The application logs are output to stdout/stderr and can be collected by service
    ```bash
    sudo journalctl -u webapp.service
    ```
-
-#### Health Check Returns 503
-
-**Symptoms**: The health check endpoint returns a 503 Service Unavailable.
-
-**Solution**:
-1. Check database connection:
-   ```bash
-   mysql -u root -p -h localhost -e "SELECT 1;"
-   ```
-2. Verify user has proper permissions:
-   ```bash
-   mysql -u root -p -e "SHOW GRANTS FOR 'root'@'localhost';"
-   ```
-3. Check application logs for specific error messages
 
 #### Packer Build Fails
 
@@ -685,33 +904,20 @@ The application logs are output to stdout/stderr and can be collected by service
    - Verify the workflow steps execute in the expected order
    - Examine any errors in composite actions
 
-4. **Composite Action Problems**:
-   - Ensure all necessary actions (setup-environment, build-binary) exist in the correct locations
-   - Check for proper permissions in the action files
-   - Verify the workflow is properly referencing the actions
-
-5. **Other Issues**:
-   - Check GitHub Actions secrets are properly set
-   - Verify IAM permissions for AWS and GCP service accounts
-   - Review Packer logs in GitHub Actions output
-   - Run Packer validate locally:
-     ```bash
-     cd infra/packer && packer validate \
-       -var "target_account_id=your-account-id" \
-       -var "gcp_dev_project=your-project-id" \
-       -var "gcp_target_project=target-project-id" \
-       machine-image.pkr.hcl
-     ```
-
 ## Dependencies
 
-- express: ^4.21.2
-- sequelize: ^6.37.5
-- mysql2: ^3.12.0
-- dotenv: ^16.4.7
-- pkg: ^5.8.1 (dev dependency for binary packaging)
-- jest: ^29.7.0 (dev dependency for testing)
-- supertest: ^7.0.0 (dev dependency for API testing)
+Primary dependencies for this application:
+
+- **express**: ^4.21.2 - Web server framework
+- **sequelize**: ^6.37.5 - ORM for database operations
+- **mysql2**: ^3.12.0 - MySQL client for Node.js
+- **aws-sdk**: ^2.1579.0 - AWS SDK for S3 integration
+- **multer**: ^1.4.5-lts.1 - Middleware for handling multipart/form-data
+- **uuid**: ^9.0.1 - UUID generation for file IDs
+- **dotenv**: ^16.4.7 - Environment variable management
+- **pkg**: ^5.8.1 (dev dependency for binary packaging)
+- **jest**: ^29.7.0 (dev dependency for testing)
+- **supertest**: ^7.0.0 (dev dependency for API testing)
 
 ## Contributing
 
@@ -746,9 +952,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/) specifica
 - `test`: Adding or updating tests
 - `chore`: Build process or auxiliary tool changes
 
-## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgements
 

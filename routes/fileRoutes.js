@@ -1,4 +1,3 @@
-// routes/fileRoutes.js
 const express = require("express");
 const router = express.Router();
 const { uploadFile, getFile, deleteFile } = require("../controllers/fileController");
