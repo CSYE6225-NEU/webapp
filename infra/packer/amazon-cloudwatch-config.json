@@ -1,0 +1,78 @@
+{
+    "agent": {
+      "metrics_collection_interval": 60,
+      "run_as_user": "root"
+    },
+    "logs": {
+      "logs_collected": {
+        "files": {
+          "collect_list": [
+            {
+              "file_path": "/var/log/syslog",
+              "log_group_name": "{instance_id}-system-logs",
+              "log_stream_name": "syslog",
+              "timezone": "UTC"
+            },
+            {
+              "file_path": "/var/log/amazon/amazon-cloudwatch-agent/amazon-cloudwatch-agent.log",
+              "log_group_name": "{instance_id}-cloudwatch-agent-logs",
+              "log_stream_name": "amazon-cloudwatch-agent.log",
+              "timezone": "UTC"
+            },
+            {
+              "file_path": "/opt/csye6225/webapp.log",
+              "log_group_name": "{instance_id}-application-logs",
+              "log_stream_name": "webapp.log",
+              "timezone": "UTC"
+            }
+          ]
+        }
+      }
+    },
+    "metrics": {
+      "namespace": "CSYE6225/Custom",
+      "append_dimensions": {
+        "InstanceId": "${aws:InstanceId}"
+      },
+      "metrics_collected": {
+        "statsd": {
+          "service_address": ":8125",
+          "metrics_collection_interval": 10,
+          "metrics_aggregation_interval": 60
+        },
+        "cpu": {
+          "resources": ["*"],
+          "measurement": [
+            "cpu_usage_idle",
+            "cpu_usage_iowait",
+            "cpu_usage_user",
+            "cpu_usage_system"
+          ],
+          "totalcpu": true
+        },
+        "disk": {
+          "resources": ["*"],
+          "measurement": [
+            "used_percent",
+            "inodes_free"
+          ]
+        },
+        "diskio": {
+          "resources": ["*"],
+          "measurement": [
+            "io_time"
+          ]
+        },
+        "mem": {
+          "measurement": [
+            "mem_used_percent"
+          ]
+        },
+        "swap": {
+          "measurement": [
+            "swap_used_percent"
+          ]
+        }
+      }
+    }
+  }

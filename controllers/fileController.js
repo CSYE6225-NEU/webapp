@@ -1,12 +1,15 @@
-
 const File = require("../models/File");
 const s3Service = require("../services/s3service");
+const cloudwatchService = require("../services/cloudwatchService");
 const { v4: uuidv4 } = require("uuid");
 
 // Upload a file to S3 and store metadata in the database
 const uploadFile = async (req, res) => {
   try {
+    cloudwatchService.log('info', 'File upload initiated');
+    
     if (!req.file) {
+      cloudwatchService.log('warn', 'File upload failed - no file provided');
       return res.status(400).json({ error: "No file provided" });
     }
 
@@ -31,6 +34,11 @@ const uploadFile = async (req, res) => {
       upload_date: new Date(),
     });
     
+    cloudwatchService.log('info', 'File upload completed successfully', {
+      fileId: fileId,
+      fileName: req.file.originalname
+    });
+    
     // Return file metadata
     return res.status(201).json({
       file_name: fileRecord.file_name,
@@ -39,7 +47,10 @@ const uploadFile = async (req, res) => {
       upload_date: fileRecord.upload_date.toISOString().split('T')[0],
     });
   } catch (error) {
-    console.error("File upload failed:", error);
+    cloudwatchService.log('error', 'File upload failed', {
+      error: error.message,
+      stack: error.stack
+    });
     return res.status(500).json({ error: "File upload failed" });
   }
 };
@@ -48,13 +59,17 @@ const uploadFile = async (req, res) => {
 const getFile = async (req, res) => {
   try {
     const { id } = req.params;
+    cloudwatchService.log('info', 'File metadata retrieval initiated', { fileId: id });
     
     // Find file metadata in database
     const file = await File.findOne({ where: { id } });
     
     if (!file) {
+      cloudwatchService.log('warn', 'File not found', { fileId: id });
       return res.status(404).json({ error: "File not found" });
     }
+    
+    cloudwatchService.log('info', 'File metadata retrieved successfully', { fileId: id });
     
     // Return file metadata
     return res.status(200).json({
@@ -64,7 +79,11 @@ const getFile = async (req, res) => {
       upload_date: file.upload_date.toISOString().split('T')[0],
     });
   } catch (error) {
-    console.error("Get file failed:", error);
+    cloudwatchService.log('error', 'Get file failed', {
+      fileId: req.params.id,
+      error: error.message,
+      stack: error.stack
+    });
     return res.status(500).json({ error: "Get file failed" });
   }
 };
@@ -73,11 +92,13 @@ const getFile = async (req, res) => {
 const deleteFile = async (req, res) => {
   try {
     const { id } = req.params;
+    cloudwatchService.log('info', 'File deletion initiated', { fileId: id });
     
     // Find file metadata in database
     const file = await File.findOne({ where: { id } });
     
     if (!file) {
+      cloudwatchService.log('warn', 'File not found for deletion', { fileId: id });
       return res.status(404).json({ error: "File not found" });
     }
     
@@ -91,10 +112,19 @@ const deleteFile = async (req, res) => {
     // Delete file metadata from database
     await file.destroy();
     
+    cloudwatchService.log('info', 'File deleted successfully', { 
+      fileId: id,
+      fileName: file.file_name
+    });
+    
     // Return success response with no content
     return res.status(204).end();
   } catch (error) {
-    console.error("Delete file failed:", error);
+    cloudwatchService.log('error', 'Delete file failed', {
+      fileId: req.params.id,
+      error: error.message,
+      stack: error.stack
+    });
     return res.status(500).json({ error: "Delete file failed" });
   }
 };

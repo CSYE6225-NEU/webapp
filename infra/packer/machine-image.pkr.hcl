@@ -82,8 +82,8 @@ source "amazon-ebs" "ubuntu" {
   source_ami                  = var.aws_base_ami
   instance_type               = var.aws_vm_size
   ssh_username                = "ubuntu"
-  ami_name                    = "webapp-nodejs-rds-s3-{{timestamp}}"
-  ami_description             = "Custom webapp image with Node.js binary (RDS & S3 enabled)"
+  ami_name                    = "webapp-nodejs-rds-s3-cloudwatch-{{timestamp}}"
+  ami_description             = "Custom webapp image with Node.js binary (RDS, S3, CloudWatch enabled)"
   associate_public_ip_address = true
   ssh_timeout                 = "10m"
 
@@ -98,9 +98,9 @@ source "googlecompute" "ubuntu" {
   source_image         = var.gcp_base_image
   machine_type         = var.gcp_vm_type
   zone                 = var.gcp_build_zone
-  image_name           = "webapp-nodejs-rds-s3-{{timestamp}}"
+  image_name           = "webapp-nodejs-rds-s3-cloudwatch-{{timestamp}}"
   image_family         = "webapp-images"
-  image_description    = "Webapp GCP image with Node.js (RDS & S3 enabled)"
+  image_description    = "Webapp GCP image with Node.js (RDS, S3, CloudWatch enabled)"
   ssh_username         = "ubuntu"
   wait_to_add_ssh_keys = "10s"
 }
@@ -130,11 +130,24 @@ build {
     destination = "/tmp/webapp.service"
   }
 
-  # Execute the setup script
+  # Copy CloudWatch agent configuration
+  provisioner "file" {
+    source      = "cloudwatch-setup.sh"
+    destination = "/tmp/cloudwatch-setup.sh"
+  }
+
+  provisioner "file" {
+    source      = "amazon-cloudwatch-config.json"
+    destination = "/tmp/amazon-cloudwatch-config.json"
+  }
+
+  # Execute the setup scripts
   provisioner "shell" {
     inline = [
       "chmod +x /tmp/setup.sh",
-      "sudo /tmp/setup.sh"
+      "sudo /tmp/setup.sh",
+      "chmod +x /tmp/cloudwatch-setup.sh",
+      "sudo /tmp/cloudwatch-setup.sh"
     ]
   }
 }
