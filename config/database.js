@@ -1,7 +1,7 @@
 const { Sequelize } = require("sequelize");
 require("dotenv").config();
 
-// Import the cloudwatchService in a way that won't cause circular dependencies
+// We'll import the cloudwatchService in a way that won't cause circular dependencies
 let cloudwatchService;
 try {
   cloudwatchService = require("../services/cloudwatchService");
