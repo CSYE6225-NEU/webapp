@@ -14,21 +14,19 @@ inputs:
     description: 'Node.js version'
     required: false
     default: '18'
-
+    
 runs:
   using: "composite"
   steps:
     - name: Create Output Directory
       shell: bash
       run: mkdir -p ${{ inputs.output-path }}
-    
     - name: Build Binary
       shell: bash
       run: |
         # Build the executable
         pkg server.js --output ${{ inputs.output-path }}/${{ inputs.binary-name }} --targets node${{ inputs.node-version }}-linux-x64
         chmod +x ${{ inputs.output-path }}/${{ inputs.binary-name }}
-        
         # Verify build success
         if [ -f ${{ inputs.output-path }}/${{ inputs.binary-name }} ]; then
           echo "Build complete! Binary located at ${{ inputs.output-path }}/${{ inputs.binary-name }}"
