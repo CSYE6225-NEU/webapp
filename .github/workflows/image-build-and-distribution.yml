@@ -402,17 +402,31 @@ jobs:
           aws-secret-access-key: ${{ secrets.DEMO_AWS_SECRET_KEY }}
           aws-region: us-east-1
       
-      # NEW STEP: Create Launch Template Version
+      # Create Launch Template Version
       - name: Create New Launch Template Version
         id: create-lt-version
         run: |
           AMI_ID=${{ steps.get-ami.outputs.latest_ami_id }}
           
-          # Get the current Launch Template
+          # Debug - List all available launch templates
+          echo "Listing all available launch templates..."
+          aws ec2 describe-launch-templates --query 'LaunchTemplates[*].[LaunchTemplateId,LaunchTemplateName]' --output table
+          
+          # Get the current Launch Template with better error handling
+          echo "Retrieving launch template ID..."
           LAUNCH_TEMPLATE_ID=$(aws ec2 describe-launch-templates \
             --filters "Name=launch-template-name,Values=csye6225_asg" \
             --query 'LaunchTemplates[0].LaunchTemplateId' \
             --output text)
+          
+          # Check if we got a valid ID
+          if [ "$LAUNCH_TEMPLATE_ID" == "None" ] || [ -z "$LAUNCH_TEMPLATE_ID" ]; then
+            echo "Error: Could not find launch template with name 'csye6225_asg'"
+            echo "Please verify the launch template name in your Terraform configuration matches 'csye6225_asg'"
+            exit 1
+          fi
+          
+          echo "Found launch template ID: $LAUNCH_TEMPLATE_ID"
           
           # Create a new Launch Template Version with the new AMI
           NEW_VERSION=$(aws ec2 create-launch-template-version \
@@ -427,25 +441,46 @@ jobs:
           echo "launch_template_id=$LAUNCH_TEMPLATE_ID" >> $GITHUB_OUTPUT
           echo "Created Launch Template Version: $NEW_VERSION"
       
-      # NEW STEP: Get ASG Name
+      # Get ASG Name
       - name: Get Auto Scaling Group Name
         id: get-asg
         run: |
+          # List all Auto Scaling Groups
+          echo "Listing all available Auto Scaling Groups..."
+          aws autoscaling describe-auto-scaling-groups --query 'AutoScalingGroups[*].AutoScalingGroupName' --output table
+          
+          # Try to find our ASG by name tag pattern
           ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
             --query 'AutoScalingGroups[?contains(Tags[?Key==`Name`].Value, `WebApp-ASG`)].AutoScalingGroupName' \
             --output text)
           
+          # If not found, try without filtering for specific tag
+          if [ -z "$ASG_NAME" ]; then
+            echo "No ASG found with Name tag containing 'WebApp-ASG'."
+            echo "Trying to find ASG by launch template ID..."
+            ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
+              --query 'AutoScalingGroups[?LaunchTemplate.LaunchTemplateId==`'${{ steps.create-lt-version.outputs.launch_template_id }}'`].AutoScalingGroupName' \
+              --output text)
+          fi
+          
+          # Check if we found an ASG
+          if [ -z "$ASG_NAME" ]; then
+            echo "Error: Could not find Auto Scaling Group."
+            echo "Please verify your Auto Scaling Group configuration."
+            exit 1
+          fi
+          
           echo "asg_name=$ASG_NAME" >> $GITHUB_OUTPUT
           echo "Auto Scaling Group Name: $ASG_NAME"
       
-      # NEW STEP: Set Default Launch Template Version
+      # Set Default Launch Template Version
       - name: Set Default Launch Template Version
         run: |
           aws ec2 modify-launch-template \
             --launch-template-id ${{ steps.create-lt-version.outputs.launch_template_id }} \
             --default-version ${{ steps.create-lt-version.outputs.new_version }}
       
-      # NEW STEP: Start Instance Refresh
+      # Start Instance Refresh
       - name: Start Instance Refresh
         id: refresh
         run: |
@@ -458,7 +493,7 @@ jobs:
           echo "refresh_id=$REFRESH_ID" >> $GITHUB_OUTPUT
           echo "Started Instance Refresh: $REFRESH_ID"
       
-      # NEW STEP: Wait for Instance Refresh to Complete
+      # Wait for Instance Refresh to Complete
       - name: Wait for Instance Refresh
         run: |
           REFRESH_ID=${{ steps.refresh.outputs.refresh_id }}
