@@ -1,13 +1,16 @@
-name: Build and Migrate Infrastructure Images
+name: CI/CD Pipeline for Merged Pull Requests
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches:
       - main
+  workflow_dispatch:  # For manual triggering during testing
 
 jobs:
-  infrastructure_image_pipeline:
-    name: Create and Distribute Cloud Images
+  deploy:
+    name: Build and Deploy
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
@@ -198,29 +201,32 @@ jobs:
           aws-secret-access-key: ${{ secrets.DEV_AWS_SECRET_KEY }}
           aws-region: us-east-1
 
-      # Setup GCP DEV credentials from JSON
-      - name: Configure GCP Development Credentials
-        id: setup-gcp-dev
-        run: |
-          # Create credentials file
-          echo '${{ secrets.DEV_GCP_KEY }}' > gcp-dev-credentials.json
-          
-          # Set environment variables for use in later steps
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/gcp-dev-credentials.json" >> $GITHUB_ENV
-          echo "GCP_PROJECT_ID=$(echo '${{ secrets.DEV_GCP_KEY }}' | jq -r '.project_id')" >> $GITHUB_ENV
+      # GCP related steps (commented out but kept for reference)
+      # ------------------------------------------------------------
+      # # Setup GCP DEV credentials from JSON
+      # - name: Configure GCP Development Credentials
+      #   id: setup-gcp-dev
+      #   run: |
+      #     # Create credentials file
+      #     echo '${{ secrets.DEV_GCP_KEY }}' > gcp-dev-credentials.json
+      #     
+      #     # Set environment variables for use in later steps
+      #     echo "GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/gcp-dev-credentials.json" >> $GITHUB_ENV
+      #     echo "GCP_PROJECT_ID=$(echo '${{ secrets.DEV_GCP_KEY }}' | jq -r '.project_id')" >> $GITHUB_ENV
 
-      # Setup GCP DEMO credentials for sharing
-      - name: Configure GCP Target Environment Credentials
-        id: setup-gcp-demo
-        run: |
-          # Create credentials file
-          echo '${{ secrets.DEMO_GCP_KEY }}' > gcp-demo-credentials.json
-          
-          # Copy for use by migration script
-          cp gcp-demo-credentials.json infra/packer/gcp-demo-credentials.json
-          
-          # Set environment variable for use in later steps
-          echo "GCP_DEMO_PROJECT_ID=$(echo '${{ secrets.DEMO_GCP_KEY }}' | jq -r '.project_id')" >> $GITHUB_ENV
+      # # Setup GCP DEMO credentials for sharing
+      # - name: Configure GCP Target Environment Credentials
+      #   id: setup-gcp-demo
+      #   run: |
+      #     # Create credentials file
+      #     echo '${{ secrets.DEMO_GCP_KEY }}' > gcp-demo-credentials.json
+      #     
+      #     # Copy for use by migration script
+      #     cp gcp-demo-credentials.json infra/packer/gcp-demo-credentials.json
+      #     
+      #     # Set environment variable for use in later steps
+      #     echo "GCP_DEMO_PROJECT_ID=$(echo '${{ secrets.DEMO_GCP_KEY }}' | jq -r '.project_id')" >> $GITHUB_ENV
+      # ------------------------------------------------------------
 
       # Setup AWS DEMO Account ID for sharing
       - name: Identify AWS Target Account
@@ -238,87 +244,132 @@ jobs:
           # Switch back to DEV credentials for building
           unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 
-      # Install and authenticate gcloud CLI with DEV credentials
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
-        with:
-          service_account_key: ${{ secrets.DEV_GCP_KEY }}
-          export_default_credentials: true
+      # GCP related steps (commented out but kept for reference)
+      # ------------------------------------------------------------
+      # # Install and authenticate gcloud CLI with DEV credentials
+      # - name: Set up Cloud SDK
+      #   uses: google-github-actions/setup-gcloud@v1
+      #   with:
+      #     service_account_key: ${{ secrets.DEV_GCP_KEY }}
+      #     export_default_credentials: true
 
-      - name: Authenticate GCP Service Account
-        id: authenticate-gcp-user
-        run: |
-          # Extract client_email from the JSON credentials
-          GCP_DEV_EMAIL=$(echo '${{ secrets.DEV_GCP_KEY }}' | jq -r '.client_email')
+      # - name: Authenticate GCP Service Account
+      #   id: authenticate-gcp-user
+      #   run: |
+      #     # Extract client_email from the JSON credentials
+      #     GCP_DEV_EMAIL=$(echo '${{ secrets.DEV_GCP_KEY }}' | jq -r '.client_email')
 
-          # Authenticate the service account
-          gcloud auth activate-service-account --key-file="gcp-dev-credentials.json"
+      #     # Authenticate the service account
+      #     gcloud auth activate-service-account --key-file="gcp-dev-credentials.json"
 
-          # Set the active account
-          gcloud config set account ${GCP_DEV_EMAIL}
-          
-          # Set the active project
-          gcloud config set project ${GCP_PROJECT_ID}
+      #     # Set the active account
+      #     gcloud config set account ${GCP_DEV_EMAIL}
+      #     
+      #     # Set the active project
+      #     gcloud config set project ${GCP_PROJECT_ID}
 
-          # Export the email to the environment for later use
-          echo "GCP_DEV_EMAIL=${GCP_DEV_EMAIL}" >> $GITHUB_ENV
+      #     # Export the email to the environment for later use
+      #     echo "GCP_DEV_EMAIL=${GCP_DEV_EMAIL}" >> $GITHUB_ENV
+      # ------------------------------------------------------------
 
       - name: Initialize Packer
         working-directory: infra/packer
         run: packer init .
 
-      - name: Build Multi-Cloud Infrastructure Images
+      # Build infrastructure images
+      - name: Build AWS Infrastructure Image
         working-directory: infra/packer
         run: |
           # First validate the template
           echo "Validating Packer template..."
           packer validate \
             -var "target_account_id=${DEMO_ACCOUNT_ID}" \
-            -var "gcp_dev_project=${GCP_PROJECT_ID}" \
-            -var "gcp_target_project=${GCP_DEMO_PROJECT_ID}" \
             -var "aws_build_region=us-east-1" \
-            -var "gcp_build_zone=us-east1-b" \
             -var "aws_vm_size=t2.micro" \
-            -var "gcp_vm_type=e2-medium" \
-            -var "gcp_storage_region=us" \
             machine-image.pkr.hcl
 
-          # Then build if validation succeeds
-          echo "Building AMI and Machine images..."
+          # Then build AWS image (exclude GCP build)
+          echo "Building AMI..."
           packer build \
+            -only=amazon-ebs.ubuntu \
             -var "target_account_id=${DEMO_ACCOUNT_ID}" \
-            -var "gcp_dev_project=${GCP_PROJECT_ID}" \
-            -var "gcp_target_project=${GCP_DEMO_PROJECT_ID}" \
             -var "aws_build_region=us-east-1" \
-            -var "gcp_build_zone=us-east1-b" \
             -var "aws_vm_size=t2.micro" \
-            -var "gcp_vm_type=e2-medium" \
-            -var "gcp_storage_region=us" \
             machine-image.pkr.hcl
 
-      # Run the GCP migration script after GCP Machine Image is verified
-      - name: Migrate GCP Image to Target Environment
-        run: |
-          echo "Running GCP migration script..."
-          
-          # Make the script executable
-          chmod +x infra/packer/gcp_migration.sh
-          
-          # Run the script with zone parameter
-          ./infra/packer/gcp_migration.sh us-east1-b
-          
-          # Verify the machine image in the DEMO project
-          echo "Verifying Machine Image in DEMO project..."
-          
-          # Temporarily authenticate with DEMO credentials to verify
-          gcloud auth activate-service-account --key-file="gcp-demo-credentials.json"
-          gcloud config set project ${GCP_DEMO_PROJECT_ID}
-          
-          # List and verify images in DEMO project
-          gcloud compute images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:copy-webapp-nodejs-rds-s3" --limit=5
-          gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-webapp-nodejs-rds-s3" --limit=5
+      # GCP related steps (commented out but kept for reference)
+      # ------------------------------------------------------------
+      # - name: Build GCP Infrastructure Image
+      #   working-directory: infra/packer
+      #   run: |
+      #     # Build GCP image
+      #     echo "Building GCP image..."
+      #     packer build \
+      #       -only=googlecompute.ubuntu \
+      #       -var "gcp_dev_project=${GCP_PROJECT_ID}" \
+      #       -var "gcp_target_project=${GCP_DEMO_PROJECT_ID}" \
+      #       -var "gcp_build_zone=us-east1-b" \
+      #       -var "gcp_vm_type=e2-medium" \
+      #       -var "gcp_storage_region=us" \
+      #       machine-image.pkr.hcl
 
-      # Run the AMI migration script after AWS AMI is verified
+      # # Run the GCP migration script after GCP Machine Image is verified
+      # - name: Migrate GCP Image to Target Environment
+      #   run: |
+      #     echo "Running GCP migration script..."
+      #     
+      #     # Make the script executable
+      #     chmod +x infra/packer/gcp_migration.sh
+      #     
+      #     # Run the script with zone parameter
+      #     ./infra/packer/gcp_migration.sh us-east1-b
+      #     
+      #     # Verify the machine image in the DEMO project
+      #     echo "Verifying Machine Image in DEMO project..."
+      #     
+      #     # Temporarily authenticate with DEMO credentials to verify
+      #     gcloud auth activate-service-account --key-file="gcp-demo-credentials.json"
+      #     gcloud config set project ${GCP_DEMO_PROJECT_ID}
+      #     
+      #     # List and verify images in DEMO project
+      #     gcloud compute images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:copy-webapp-nodejs-rds-s3" --limit=5
+      #     gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-webapp-nodejs-rds-s3" --limit=5
+      # ------------------------------------------------------------
+
+      # Get the latest AMI ID
+      - name: Get Latest AMI ID
+        id: get-ami
+        run: |
+          LATEST_AMI=$(aws ec2 describe-images \
+            --owners self \
+            --filters "Name=name,Values=webapp-nodejs-rds-s3-cloudwatch-*" \
+            --query 'sort_by(Images, &CreationDate)[-1].ImageId' \
+            --output text)
+          echo "latest_ami_id=$LATEST_AMI" >> $GITHUB_OUTPUT
+          echo "Latest AMI ID: $LATEST_AMI"
+
+      # Share AMI with DEMO account
+      - name: Share AMI with DEMO Account
+        run: |
+          AMI_ID=${{ steps.get-ami.outputs.latest_ami_id }}
+          aws ec2 modify-image-attribute \
+            --image-id $AMI_ID \
+            --launch-permission "Add=[{UserId=${{ env.DEMO_ACCOUNT_ID }}}]"
+          
+          # Get Snapshot ID for the AMI
+          SNAPSHOT_ID=$(aws ec2 describe-images \
+            --image-ids $AMI_ID \
+            --query 'Images[0].BlockDeviceMappings[0].Ebs.SnapshotId' \
+            --output text)
+          
+          # Share the snapshot
+          aws ec2 modify-snapshot-attribute \
+            --snapshot-id $SNAPSHOT_ID \
+            --attribute createVolumePermission \
+            --operation-type add \
+            --user-ids ${{ env.DEMO_ACCOUNT_ID }}
+
+      # Run the AMI migration script
       - name: Migrate AWS AMI to Target Environment
         run: |
           echo "Running AMI migration script..."
@@ -344,6 +395,98 @@ jobs:
           
           # List and verify images in DEMO account
           aws ec2 describe-images --owners self --query 'Images[*].[ImageId,Name,CreationDate]' --output table | head -n 10
+
+      # NEW STEP: Configure AWS DEMO Credentials formally
+      - name: Configure AWS DEMO Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.DEMO_AWS_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.DEMO_AWS_SECRET_KEY }}
+          aws-region: us-east-1
+      
+      # NEW STEP: Create Launch Template Version
+      - name: Create New Launch Template Version
+        id: create-lt-version
+        run: |
+          AMI_ID=${{ steps.get-ami.outputs.latest_ami_id }}
+          
+          # Get the current Launch Template
+          LAUNCH_TEMPLATE_ID=$(aws ec2 describe-launch-templates \
+            --filters "Name=launch-template-name,Values=csye6225_asg" \
+            --query 'LaunchTemplates[0].LaunchTemplateId' \
+            --output text)
+          
+          # Create a new Launch Template Version with the new AMI
+          NEW_VERSION=$(aws ec2 create-launch-template-version \
+            --launch-template-id $LAUNCH_TEMPLATE_ID \
+            --version-description "New version with updated AMI" \
+            --source-version '$Latest' \
+            --launch-template-data '{"ImageId":"'$AMI_ID'"}' \
+            --query 'LaunchTemplateVersion.VersionNumber' \
+            --output text)
+          
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "launch_template_id=$LAUNCH_TEMPLATE_ID" >> $GITHUB_OUTPUT
+          echo "Created Launch Template Version: $NEW_VERSION"
+      
+      # NEW STEP: Get ASG Name
+      - name: Get Auto Scaling Group Name
+        id: get-asg
+        run: |
+          ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
+            --query 'AutoScalingGroups[?contains(Tags[?Key==`Name`].Value, `WebApp-ASG`)].AutoScalingGroupName' \
+            --output text)
+          
+          echo "asg_name=$ASG_NAME" >> $GITHUB_OUTPUT
+          echo "Auto Scaling Group Name: $ASG_NAME"
+      
+      # NEW STEP: Set Default Launch Template Version
+      - name: Set Default Launch Template Version
+        run: |
+          aws ec2 modify-launch-template \
+            --launch-template-id ${{ steps.create-lt-version.outputs.launch_template_id }} \
+            --default-version ${{ steps.create-lt-version.outputs.new_version }}
+      
+      # NEW STEP: Start Instance Refresh
+      - name: Start Instance Refresh
+        id: refresh
+        run: |
+          REFRESH_ID=$(aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name ${{ steps.get-asg.outputs.asg_name }} \
+            --preferences '{"MinHealthyPercentage": 90, "InstanceWarmup": 300}' \
+            --query 'InstanceRefreshId' \
+            --output text)
+          
+          echo "refresh_id=$REFRESH_ID" >> $GITHUB_OUTPUT
+          echo "Started Instance Refresh: $REFRESH_ID"
+      
+      # NEW STEP: Wait for Instance Refresh to Complete
+      - name: Wait for Instance Refresh
+        run: |
+          REFRESH_ID=${{ steps.refresh.outputs.refresh_id }}
+          ASG_NAME=${{ steps.get-asg.outputs.asg_name }}
+          
+          echo "Waiting for Instance Refresh to complete..."
+          while true; do
+            STATUS=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name $ASG_NAME \
+              --instance-refresh-ids $REFRESH_ID \
+              --query 'InstanceRefreshes[0].Status' \
+              --output text)
+            
+            echo "Current status: $STATUS"
+            
+            if [ "$STATUS" == "Successful" ]; then
+              echo "Instance Refresh completed successfully!"
+              break
+            elif [ "$STATUS" == "Failed" ] || [ "$STATUS" == "Cancelled" ]; then
+              echo "Instance Refresh failed or was cancelled"
+              exit 1
+            fi
+            
+            echo "Waiting 30 seconds before checking again..."
+            sleep 30
+          done
 
       # Clean up credentials after build
       - name: Secure Credential Cleanup
