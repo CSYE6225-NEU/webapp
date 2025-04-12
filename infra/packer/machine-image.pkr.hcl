@@ -11,7 +11,7 @@ packer {
   }
 }
 
-# AWS Configuration Variable
+# AWS Configuration Variables
 # ===========================================================
 variable "aws_build_region" {
   type        = string
