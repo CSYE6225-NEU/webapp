@@ -12,3 +12,4 @@ This repository contains a production-ready NodeJS application with AWS RDS, S3,
 - [Project Structure](docs/06-project-structure.md)
 - [CI/CD and Deployment](docs/07-cicd-deployment.md)
 - [Security and Troubleshooting](docs/08-security-troubleshooting.md)
+- [Dependencies and Contributing](docs/09-dependencies-contributing.md)

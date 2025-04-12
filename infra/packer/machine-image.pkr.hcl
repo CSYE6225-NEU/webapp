@@ -113,6 +113,16 @@ build {
     "source.googlecompute.ubuntu"
   ]
 
+  # Upgrade OS packages first
+  provisioner "shell" {
+    inline = [
+      "echo 'Updating system packages...'",
+      "sudo apt-get update",
+      "sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y",
+      "sudo apt-get install -y nodejs npm awscli jq"
+    ]
+  }
+
   # Copy application files to the image
   provisioner "file" {
     source      = "dist/webapp"
