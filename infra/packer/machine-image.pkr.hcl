@@ -113,6 +113,34 @@ build {
     "source.googlecompute.ubuntu"
   ]
 
+  # Upgrade OS packages first
+  provisioner "shell" {
+    inline = [
+      "echo 'Updating system packages...'",
+      "sudo apt-get update",
+      "sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y",
+
+      "echo 'Installing required packages...'",
+      "sudo apt-get install -y software-properties-common",
+      "sudo add-apt-repository -y universe",
+      "sudo apt-get update",
+
+      "# Install Node.js using NodeSource repository",
+      "curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -",
+      "sudo apt-get install -y nodejs",
+
+      "# Install AWS CLI v2",
+      "curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip'",
+      "sudo apt-get install -y unzip",
+      "unzip awscliv2.zip",
+      "sudo ./aws/install",
+      "rm -rf aws awscliv2.zip",
+
+      "# Install jq",
+      "sudo apt-get install -y jq"
+    ]
+  }
+
   # Copy application files to the image
   provisioner "file" {
     source      = "dist/webapp"
