@@ -1,7 +1,7 @@
 name: CI/CD Pipeline for Merged Pull Requests
 
 on:
-  push:
+  pull_request:
     branches:
       - main
   workflow_dispatch:  # For manual triggering during testing
